@@ -1,0 +1,12 @@
+---
+description: Unit testing standards
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Testing
+
+- High unit-test coverage is required; add or extend tests with every change.
+- Cover edge cases and failure paths, not just the happy path.
+- Mock external services (Yahoo, MLB, Azure OpenAI); never hit live APIs in unit tests.
+- Do NOT lower or skip the coverage gate to make CI pass.

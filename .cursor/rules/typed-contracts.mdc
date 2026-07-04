@@ -1,0 +1,12 @@
+---
+description: Typed business objects and inter-service DTOs
+globs: **/*.ts
+alwaysApply: false
+---
+
+# Typed Contracts
+
+- Model business objects with explicit types; no `any` or loosely-shaped JSON crossing a service boundary.
+- All inter-service communication uses DTOs from the shared, versioned `contracts` package. Do not redefine boundary types locally.
+- Validate payloads at each boundary at runtime (e.g. Zod/TypeBox), not just at compile time.
+- A DTO change is a contract change: bump the contracts version and flag it for review.

@@ -1,0 +1,35 @@
+{
+  "name": "fantasy-co-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fantasy Baseball AI Co-Manager - Slice 1 (skeleton UI + e2e authenticated Yahoo request)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @fcm/contracts && npm run build -w @fcm/api && npm run build -w @fcm/web",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @fcm/api",
+    "dev:web": "npm run dev --workspace @fcm/web",
+    "gen:cert": "npm run gen:cert --workspace @fcm/api",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.2.3",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.4",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
+    "vitest": "^4.1.9"
+  }
+}

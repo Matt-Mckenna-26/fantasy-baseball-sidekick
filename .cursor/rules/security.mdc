@@ -1,0 +1,13 @@
+---
+description: Security and data-protection rules
+alwaysApply: true
+---
+
+# Security First
+
+- Never log, expose, or commit secrets, tokens, or user data (Yahoo tokens, PII, league data).
+- Secrets come from Key Vault / env / GitHub secrets only. Never hardcode or echo them.
+- This app is READ ONLY against Yahoo (`fspt-r`). Never call write endpoints.
+- Enforce least privilege on every cross-service call via Entra app roles; validate tokens at the boundary.
+- Validate and sanitize all external input before use.
+- When a change touches auth, tokens, or data handling, call it out explicitly for human review.

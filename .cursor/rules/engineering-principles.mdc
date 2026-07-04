@@ -1,0 +1,23 @@
+---
+description: Core engineering decision-making principles
+alwaysApply: true
+---
+
+# Engineering Principles
+
+## Ask first, never assume
+- All changes are reviewed by a human engineer. When intent, scope, or requirements are unclear, STOP and ask before writing code.
+- Do not guess at APIs, data shapes, or business rules. Confirm them.
+
+## Minimal, well-separated code
+- Write the least code needed. Prefer editing existing code over adding new.
+- Keep clean separation of concerns; respect existing module/service boundaries.
+- Do NOT introduce new abstractions (layers, wrappers, base classes, generics) without a concrete, compelling reason. Default to the simplest direct implementation.
+
+## Think before you change
+Before proposing a change, briefly state:
+- Risk and blast radius: what else could this break?
+- Cost: Azure spend, extra API calls, token usage.
+- Performance: latency, payload size, cache impact.
+- Usability: effect on the end-user experience.
+Flag anything irreversible, data-destructive, or cross-service.

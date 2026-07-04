@@ -1,0 +1,11 @@
+---
+description: Documentation and commenting standards
+alwaysApply: true
+---
+
+# Documentation
+
+- Keep docs concise. Update the README or handler docstring when behavior changes.
+- Document the "why" (intent, trade-offs, constraints), not the "what".
+- Comment only non-obvious logic - never narrate what the code plainly does.
+- Keep each service README to: purpose, how to run, env vars, and key endpoints.

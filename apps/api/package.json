@@ -1,0 +1,30 @@
+{
+  "name": "@fcm/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "gen:cert": "node scripts/gen-cert.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fcm/contracts": "*",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "yahoo-fantasy": "^5.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^26.1.0",
+    "@types/supertest": "^7.2.0",
+    "selfsigned": "^5.5.0",
+    "supertest": "^7.2.2"
+  }
+}
