@@ -1,38 +1,28 @@
 import { Routes, Route } from 'react-router-dom';
+import { SessionProvider } from './context/SessionContext';
 import { Layout } from './components/Layout';
-import { Placeholder } from './components/Placeholder';
 import { HomePage } from './pages/HomePage';
+import { ChatPage } from './pages/ChatPage';
+import { RostersPage } from './pages/RostersPage';
+import { StatsPage } from './pages/StatsPage';
+import { TeamStatsPage } from './pages/TeamStatsPage';
+import { StandingsPage } from './pages/StandingsPage';
+import { MatchupsPage } from './pages/MatchupsPage';
 
 export function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route
-          path="/chat"
-          element={
-            <Placeholder
-              title="Co-Manager Chat"
-              description="Ask the AI co-manager for advice on lineups, free agents, and trades."
-            />
-          }
-        />
-        <Route
-          path="/rosters"
-          element={
-            <Placeholder title="Rosters" description="View team rosters across your league." />
-          }
-        />
-        <Route
-          path="/stats"
-          element={
-            <Placeholder
-              title="Advanced Stats"
-              description="Dig into advanced player and team stats."
-            />
-          }
-        />
-      </Routes>
-    </Layout>
+    <SessionProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/rosters" element={<RostersPage />} />
+          <Route path="/standings" element={<StandingsPage />} />
+          <Route path="/matchups" element={<MatchupsPage />} />
+          <Route path="/stats" element={<StatsPage />} />
+          <Route path="/team-stats" element={<TeamStatsPage />} />
+        </Routes>
+      </Layout>
+    </SessionProvider>
   );
 }

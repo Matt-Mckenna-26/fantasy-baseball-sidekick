@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from './App';
 
@@ -10,11 +11,11 @@ vi.mock('./api/client', () => ({
   YAHOO_LOGIN_URL: '/auth/yahoo',
 }));
 
-import { getAuthStatus, getMyLeagues } from './api/client';
+import { getAuthStatus, getMyLeagues, logout } from './api/client';
 
-function renderApp() {
+function renderApp(initialRoute = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialRoute]}>
       <App />
     </MemoryRouter>,
   );
@@ -25,13 +26,15 @@ describe('App shell', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the nav', async () => {
+  it('renders Home in the nav for guests', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
     renderApp();
     expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('Chat')).toBeInTheDocument();
+    expect(screen.getByText('TheShowGPT')).toBeInTheDocument();
     expect(screen.getByText('Rosters')).toBeInTheDocument();
-    expect(screen.getByText('Stats')).toBeInTheDocument();
+    expect(screen.getByText('Live Standings')).toBeInTheDocument();
+    expect(screen.getByText('Players')).toBeInTheDocument();
+    expect(screen.getByText('League')).toBeInTheDocument();
   });
 
   it('shows Connect Yahoo when disconnected', async () => {
@@ -42,18 +45,71 @@ describe('App shell', () => {
     expect(getMyLeagues).not.toHaveBeenCalled();
   });
 
-  it('renders leagues when connected', async () => {
+  it('hides Home and shows the user menu when authenticated', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: true });
     vi.mocked(getMyLeagues).mockResolvedValue({
       userGuid: 'G',
       leagues: [
-        { leagueId: '1', name: 'FKL Baseball', season: '2026' },
-        { leagueId: '2', name: 'Freddy Beach', season: '2026' },
+        {
+          leagueId: '469.l.101214',
+          name: 'The Show',
+          season: '2026',
+          teamName: 'Bronx Bombers',
+          allowed: true,
+        },
+        { leagueId: '469.l.212934', name: 'Freddy Beach', season: '2026', allowed: false },
       ],
     });
-    renderApp();
-    expect(await screen.findByText('FKL Baseball')).toBeInTheDocument();
-    expect(screen.getByText('Freddy Beach')).toBeInTheDocument();
-    expect(screen.getByText('Your MLB Leagues')).toBeInTheDocument();
+    renderApp('/chat');
+
+    expect(await screen.findByText('Bronx Bombers')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Bronx Bombers' Fantasy Baseball Co-Manager"),
+    ).toBeInTheDocument();
+    expect(screen.getByText('The Show (2026)')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+  });
+
+  it('redirects authed users away from Home to Chat', async () => {
+    vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: true });
+    vi.mocked(getMyLeagues).mockResolvedValue({
+      userGuid: 'G',
+      leagues: [{ leagueId: '469.l.101214', name: 'The Show', season: '2026', allowed: true }],
+    });
+    renderApp('/');
+
+    expect(await screen.findByPlaceholderText('Message TheShowGPT…')).toBeInTheDocument();
+    expect(screen.queryByText('Connect your Yahoo account')).not.toBeInTheDocument();
+  });
+
+  it('lets authed users switch leagues and sign out from the user menu', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: true });
+    vi.mocked(getMyLeagues).mockResolvedValue({
+      userGuid: 'G',
+      leagues: [
+        {
+          leagueId: '469.l.101214',
+          name: 'The Show',
+          season: '2026',
+          teamName: 'Bronx Bombers',
+          allowed: true,
+        },
+        { leagueId: '469.l.212934', name: 'Freddy Beach', season: '2026', allowed: false },
+      ],
+    });
+    vi.mocked(logout).mockResolvedValue(undefined);
+    renderApp('/chat');
+
+    await user.click(await screen.findByRole('button', { name: 'Account menu for Bronx Bombers' }));
+
+    const select = screen.getByRole('combobox');
+    expect(select).toBeEnabled();
+    const blockedOption = screen.getByRole('option', { name: /Freddy Beach/ });
+    expect(blockedOption).toBeDisabled();
+    expect(blockedOption).toHaveAttribute('title', 'This league is not in the closed beta group');
+
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
+    expect(logout).toHaveBeenCalled();
   });
 });

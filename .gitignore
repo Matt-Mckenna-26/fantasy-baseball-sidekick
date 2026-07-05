@@ -15,6 +15,9 @@ build/
 certs/
 *.pem
 
+# Local dev state (persisted sessions + tokens across tsx-watch restarts) - NEVER commit
+.dev-state/
+
 # Test / coverage
 coverage/
 

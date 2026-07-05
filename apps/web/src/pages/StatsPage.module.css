@@ -1,0 +1,340 @@
+/* Stats v2 grid: container + custom cell styling layered over the ag-grid theme. */
+.gridWrap {
+  height: min(96vh, 1197px);
+  min-height: 559px;
+  width: 100%;
+  min-width: 0;
+}
+
+.gridWrap :global(.ag-root-wrapper) {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 640px) {
+  .gridWrap {
+    height: clamp(280px, calc(100dvh - 14rem), 62dvh);
+    min-height: 280px;
+  }
+}
+
+/* Percentile heat cell fills the whole cell (column zeroes its padding) so the
+   hue reaches the edges. Text stays legible on any hue via a light color + shadow. */
+.heatCell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: 0 0.6rem;
+  color: #f8fafc;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.heatEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: 0 0.6rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Season overall-rank badge (parity with the old Rank column). */
+.rankBadge {
+  display: inline-block;
+  min-width: 2rem;
+  text-align: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(109, 40, 217, 0.25);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rankEmpty {
+  color: var(--muted);
+}
+
+.ownerCell {
+  color: var(--muted);
+}
+
+.ownerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* Team "pick-em" multi-select filter (Community custom filter for the Team column). */
+.pickem {
+  padding: 0.5rem;
+  min-width: 190px;
+  color: var(--text);
+}
+
+.pickemActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pickemActions button {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.pickemActions button:hover {
+  color: var(--text);
+}
+
+.pickemList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.pickemItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.15rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.pickemItem input {
+  accent-color: var(--accent);
+}
+
+.pickemEmpty {
+  color: var(--muted);
+  padding: 0.25rem;
+  font-size: 0.85rem;
+}
+
+/* Offset for in-page jump links so anchored sections aren't cut off at the top. */
+.scrollAnchor {
+  scroll-margin-top: 1rem;
+}
+
+.jumpBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.jumpBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.jumpBadge:hover {
+  color: var(--text);
+  border-color: var(--accent-hover);
+  background: rgba(109, 40, 217, 0.2);
+}
+
+.chartsSection {
+  margin-top: 1.25rem;
+}
+
+.chartControls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.tableCardTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tableCardTitleInRow {
+  margin: 0;
+}
+
+.gridHelp {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gridHelpTrigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gridHelpBadge {
+  position: absolute;
+  top: -0.1rem;
+  right: -0.1rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--accent-hover);
+  border: 1.5px solid var(--panel);
+  pointer-events: none;
+}
+
+.gridHelpTrigger:hover,
+.gridHelpTrigger[aria-expanded='true'] {
+  color: var(--text);
+  border-color: var(--accent-hover);
+  background: rgba(109, 40, 217, 0.2);
+}
+
+.gridHelpPanel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  right: auto;
+  width: min(22rem, calc(100vw - 2.5rem));
+  max-width: calc(100vw - 2.5rem);
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 12px 32px rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.gridHelpLead {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+.gridHelpSection + .gridHelpSection {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.gridHelpHeading {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gridHelpList {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.gridHelpList li + li {
+  margin-top: 0.35rem;
+}
+
+.gridHelpSwatch {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 3px;
+  vertical-align: -0.05rem;
+}
+
+.gridHelpSwatch[data-tone='cold'] {
+  background: rgba(37, 99, 235, 0.55);
+}
+
+.gridHelpSwatch[data-tone='neutral'] {
+  background: rgba(100, 116, 139, 0.35);
+}
+
+.gridHelpSwatch[data-tone='hot'] {
+  background: rgba(239, 68, 68, 0.55);
+}
+
+@media (max-width: 640px) {
+  .jumpBadges {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 0 -0.25rem;
+    padding: 0.15rem 0.25rem;
+  }
+
+  .jumpBadges::-webkit-scrollbar {
+    display: none;
+  }
+
+  .jumpBadge {
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    padding: 0.3rem 0.65rem;
+  }
+
+  .scrollAnchor {
+    scroll-margin-top: 6.5rem;
+  }
+
+  .tableCardTitleRow {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.5rem;
+  }
+
+  .chartsSection {
+    margin-top: 1rem;
+  }
+
+  .gridHelpPanel {
+    position: fixed;
+    top: auto;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: min(55vh, 22rem);
+    overflow-y: auto;
+    z-index: 55;
+  }
+}

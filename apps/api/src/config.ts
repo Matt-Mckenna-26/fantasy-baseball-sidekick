@@ -16,6 +16,12 @@ const configSchema = z.object({
   webAppUrl: z.string().url(),
   sessionSecret: z.string().min(16),
   port: z.coerce.number().int().positive(),
+  /**
+   * Data source for authed Yahoo data. 'live' calls the real Yahoo Fantasy API;
+   * 'mock' serves fixture data through the same DTOs. Auth (Yahoo OAuth) is always
+   * enforced regardless - only the data boundary changes.
+   */
+  dataMode: z.enum(['live', 'mock']).default('live'),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -32,6 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webAppUrl: env.WEB_APP_URL,
     sessionSecret: env.SESSION_SECRET,
     port: env.PORT,
+    dataMode: env.DATA_MODE,
   });
 
   if (!result.success) {

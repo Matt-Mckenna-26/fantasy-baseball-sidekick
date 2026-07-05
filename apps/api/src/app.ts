@@ -5,7 +5,10 @@ import type { TokenStore } from './tokenStore.js';
 import type { FantasyProvider } from './fantasyProvider.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createMeRouter } from './routes/me.js';
+import { createMlbRouter } from './routes/mlb.js';
+import { getMockMlbGames } from './fantasyProvider.mock.js';
 import { sendError } from './http.js';
+import { YahooUpstreamError } from './yahooClient.js';
 
 /** Serialize a non-Error rejection (e.g. Yahoo's error payload) for safe logging. */
 function safeSerialize(value: unknown): string {
@@ -19,6 +22,8 @@ function safeSerialize(value: unknown): string {
 export interface AppDeps {
   tokenStore: TokenStore;
   provider: FantasyProvider;
+  /** Optional server-side session store. Omit to use the default in-memory store. */
+  sessionStore?: session.Store;
 }
 
 /**
@@ -34,6 +39,7 @@ export function createApp(config: AppConfig, deps: AppDeps): Express {
     session({
       name: 'fcm.sid',
       secret: config.sessionSecret,
+      store: deps.sessionStore,
       resave: false,
       saveUninitialized: false,
       cookie: {
@@ -51,15 +57,32 @@ export function createApp(config: AppConfig, deps: AppDeps): Express {
 
   app.use('/auth', createAuthRouter(config, deps.tokenStore));
   app.use('/api/me', createMeRouter(deps.tokenStore, deps.provider));
+  // Public MLB live-game state for the roster ticker. In mock mode, serve the seeded
+  // games so the ticker works offline; in live mode, hit the public MLB Stats API.
+  app.use('/api/mlb', createMlbRouter(config.dataMode === 'mock' ? getMockMlbGames : undefined));
 
   app.use((_req, res) => {
     sendError(res, 404, 'not_found', 'Resource not found.');
   });
 
   // Centralized error handler - never leak internals or tokens to the client.
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const detail =
-      err instanceof Error ? (err.stack ?? err.message) : safeSerialize(err);
+  app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof YahooUpstreamError) {
+      const cause =
+        err.cause instanceof Error ? (err.cause.stack ?? err.cause.message) : safeSerialize(err.cause);
+      console.error('Yahoo upstream error:', err.message, `\ncause: ${cause}`);
+      if (res.headersSent) {
+        return;
+      }
+      if (err.authFailure) {
+        void deps.tokenStore.clear(req.sessionID);
+        sendError(res, 401, 'unauthorized', 'Your Yahoo session expired. Sign in again.');
+        return;
+      }
+      sendError(res, 502, 'upstream_unavailable', 'Yahoo Fantasy is temporarily unavailable. Please try again.');
+      return;
+    }
+    const detail = err instanceof Error ? (err.stack ?? err.message) : safeSerialize(err);
     console.error('Unhandled API error:', detail);
     if (res.headersSent) {
       return;

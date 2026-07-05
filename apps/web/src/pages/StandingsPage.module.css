@@ -1,0 +1,325 @@
+/* This-week category watch: grouped best-in-cat (hot) / worst-in-cat (cold) tiles. */
+.leaders {
+  margin-bottom: 1.25rem;
+}
+
+.leadersHeader {
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.leaderGroup + .leaderGroup {
+  margin-top: 0.85rem;
+}
+
+.leaderGroupLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+/* Each group is exactly one full-width row; column count is set inline per group. */
+.leadersGrid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Each tile is its own query container, so the hero value scales to the tile's
+   own width (3-up on desktop, tighter on phones) without viewport breakpoints. */
+.leaderCard {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.85rem 0.95rem;
+  text-align: right;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 10px 28px rgba(0, 0, 0, 0.14);
+}
+
+/* Tone reads three ways (never color alone): border accent, tinted wash, and the
+   icon + "Best/Worst" cue rendered in the markup. */
+.leaderCardHot {
+  border-left-color: #f87171;
+  background:
+    linear-gradient(150deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0) 62%), var(--panel);
+}
+
+.leaderCardCold {
+  border-left-color: #60a5fa;
+  background:
+    linear-gradient(150deg, rgba(96, 165, 250, 0.12), rgba(96, 165, 250, 0) 62%), var(--panel);
+}
+
+.leaderEyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.leaderStat {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.leaderToneIcon {
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* The hero: fluidly sized to the tile width, capped so it never dominates the card. */
+.leaderValue {
+  font-size: clamp(1.65rem, 30cqi, 2.6rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderCardHot .leaderValue {
+  color: #f87171;
+}
+
+.leaderCardCold .leaderValue {
+  color: #60a5fa;
+}
+
+.leaderTeam {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.leaderAvatar {
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: 0 0 auto;
+}
+
+.leaderTeamName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(0.8rem, 9cqi, 1rem);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Screen-reader-only text (tone cue) - visible content stays visual. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Phones: keep three tiles per row, just tighten spacing and the avatar. */
+@media (max-width: 640px) {
+  .leadersGrid {
+    gap: 0.4rem;
+  }
+
+  .leaderCard {
+    gap: 0.3rem;
+    padding: 0.55rem 0.6rem;
+    border-left-width: 3px;
+    border-radius: 12px;
+  }
+
+  .leaderAvatar {
+    width: 1.4rem;
+    height: 1.4rem;
+  }
+}
+
+/* Loading skeleton: same dimensions as the real board so nothing shifts on load. */
+.leaderCardSkeleton {
+  border-left-color: var(--border);
+}
+
+.skeletonHeader {
+  width: 12rem;
+  height: 0.82rem;
+  border-radius: 6px;
+}
+
+.skeletonGroupLabel {
+  width: 9rem;
+  height: 0.75rem;
+  border-radius: 6px;
+}
+
+/* In-card skeleton lines mirror the real right-aligned eyebrow/value/team rows. */
+.skeletonLine {
+  margin-left: auto;
+  border-radius: 6px;
+}
+
+.skeletonStat {
+  width: 45%;
+  height: 0.8rem;
+}
+
+.skeletonValue {
+  width: 60%;
+  height: 2rem;
+}
+
+.skeletonTeam {
+  width: 80%;
+  height: 1.1rem;
+}
+
+.skeletonHeader,
+.skeletonGroupLabel,
+.skeletonLine {
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.08) 25%,
+    rgba(148, 163, 184, 0.18) 37%,
+    rgba(148, 163, 184, 0.08) 63%
+  );
+  background-size: 400% 100%;
+  animation: leaderShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes leaderShimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonHeader,
+  .skeletonGroupLabel,
+  .skeletonLine {
+    animation: none;
+  }
+}
+
+/* Projected rank movers between the matchup carousel and standings table. */
+.movers {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.moversHeader {
+  margin-bottom: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.moversBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.moverLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.25rem;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.moverIcon {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.moverHot {
+  color: var(--text);
+}
+
+.moverCold {
+  color: var(--muted);
+}
+
+.inlineTeam {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.inlineTeamAvatar {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.inlineTeamName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+
+.moverHot .inlineTeamName {
+  color: #f87171;
+}
+
+.moverCold .inlineTeamName {
+  color: #60a5fa;
+}
+
+@media (max-width: 640px) {
+  .movers {
+    margin-left: -0.15rem;
+    margin-right: -0.15rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+  }
+
+  .moverLine {
+    font-size: 0.85rem;
+  }
+
+  .inlineTeamName {
+    max-width: 10rem;
+  }
+}

@@ -1,0 +1,534 @@
+/* Shared layout + table primitives for data pages (Rosters, Stats). */
+.page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fieldLabel {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.95rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Batting/pitching tabs with coverage window badges on one row. */
+.tabToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.tabToolbar .tabs {
+  margin-bottom: 0;
+}
+
+.tabToolbar .rangeToggle {
+  margin-bottom: 0;
+}
+
+.coverageControls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.weekField {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.weekField .fieldLabel {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.weekField .select {
+  min-width: 7.5rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.coverageHint {
+  margin: 0 0 1.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.65;
+}
+
+.tab {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabActive {
+  color: var(--text);
+  border-color: var(--accent-hover);
+  background: rgba(109, 40, 217, 0.25);
+}
+
+.tableStack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Floating card surface for data tables — shared across Rosters and Stats. */
+.tableCard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem 0.75rem;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  container-type: inline-size;
+  container-name: roster-card;
+}
+
+.tableCardTitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+
+/* Roster tables: fit every column in the viewport — no horizontal scroll. */
+.tableRosterWrap {
+  overflow-x: visible;
+  margin: 0;
+  padding: 0;
+}
+
+.tableRoster {
+  table-layout: fixed;
+  width: 100%;
+  font-size: clamp(0.68rem, 2.1vw, 0.9rem);
+}
+
+.tableRoster th,
+.tableRoster td {
+  padding: clamp(0.25rem, 0.9vw, 0.5rem) clamp(0.15rem, 0.6vw, 0.45rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableRoster .num {
+  white-space: nowrap;
+}
+
+.tableRoster thead th {
+  font-size: clamp(0.62rem, 1.8vw, 0.75rem);
+  letter-spacing: 0.02em;
+}
+
+.tableRoster .playerCell {
+  white-space: nowrap;
+}
+
+.playerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityAvatar,
+.playerAvatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(1.35rem, 3.8vw, 1.75rem);
+  height: clamp(1.35rem, 3.8vw, 1.75rem);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.entityAvatarImg,
+.playerAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+.entityAvatarFallback,
+.playerAvatarFallback {
+  font-size: clamp(0.52rem, 1.5vw, 0.62rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.entityLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.selectRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selectRow .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.playerCellInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tableRoster .playerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gameDayBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 0.15rem;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: clamp(0.58rem, 1.6vw, 0.72rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.gameDayBadgeSlot {
+  flex: 0 0 clamp(0.95rem, 2.4vw, 1.15rem);
+  width: clamp(0.95rem, 2.4vw, 1.15rem);
+  height: clamp(0.95rem, 2.4vw, 1.15rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gameCellInner {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.gameTickerText {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.tableRoster .gameCell {
+  white-space: nowrap;
+  line-height: 1.25;
+  font-size: clamp(0.62rem, 1.9vw, 0.82rem);
+}
+
+.tableRoster .posBadge {
+  min-width: 0;
+  padding: 0.1rem 0.25rem;
+  font-size: clamp(0.58rem, 1.7vw, 0.75rem);
+}
+
+.tableRoster .statusBadge {
+  font-size: clamp(0.55rem, 1.6vw, 0.7rem);
+  padding: 0.05rem 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .tableCard {
+    padding: 0.65rem 0.4rem 0.5rem;
+  }
+
+  .page__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    flex: 1 1 calc(50% - 0.25rem);
+    text-align: center;
+  }
+
+  .tabToolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tabToolbar .tabs {
+    width: 100%;
+  }
+
+  .tabToolbar .rangeToggle {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .tabToolbar .coverageControls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .weekField {
+    width: 100%;
+  }
+
+  .weekField .select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .rangeToggle {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .rangeButton,
+  .rangeButtonActive {
+    flex: 1 1 auto;
+    padding: 0.35rem 0.45rem;
+    font-size: clamp(0.72rem, 3vw, 0.85rem);
+  }
+
+  .tableCardTitle {
+    font-size: 0.88rem;
+  }
+
+  .coverageHint {
+    font-size: 0.72rem;
+    margin-bottom: 0.85rem;
+  }
+
+  /* Tab row + help icon: keep controls on one line when possible. */
+  .tabToolbar {
+    gap: 0.5rem;
+  }
+
+  .tabToolbar .tabs {
+    flex: 1 1 auto;
+  }
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+/* Bench rows: muted grey so inactive roster slots read at a glance. */
+.benchRow {
+  background: rgba(100, 116, 139, 0.22);
+}
+
+.benchRow td {
+  color: rgba(203, 213, 225, 0.78);
+}
+
+.table tbody tr.benchRow:hover {
+  background: rgba(100, 116, 139, 0.34);
+}
+
+/* IL rows: muted reddish tint for injured-list slots. */
+.injuredRow {
+  background: rgba(127, 45, 45, 0.22);
+}
+
+.injuredRow td {
+  color: rgba(226, 200, 200, 0.82);
+}
+
+.table tbody tr.injuredRow:hover {
+  background: rgba(148, 52, 52, 0.32);
+}
+
+.tableCard .table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Totals footer: a summed counting-stat row per roster table. A top border keeps
+   the last body row's separator even though tbody's last row drops its own. */
+.totalsRow td {
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalsLabel {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.8rem;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable:hover {
+  color: var(--text);
+}
+
+.sortableActive {
+  color: var(--accent-hover);
+}
+
+.posBadge {
+  display: inline-block;
+  min-width: 2.2rem;
+  text-align: center;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(109, 40, 217, 0.25);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #b45309;
+  color: #fbbf24;
+  font-size: 0.75rem;
+}
+
+/* Segmented control for the stat window (Today / Last 7 / Last 30 / Season). */
+.rangeToggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.rangeButton,
+.rangeButtonActive {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.8rem;
+  border-radius: 7px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.rangeButton:hover {
+  color: var(--text);
+}
+
+.rangeButtonActive {
+  background: var(--accent, #6d28d9);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Live game ticker cell: accent while a game is in progress, muted otherwise. */
+.tickerLive {
+  color: var(--accent-hover, #a78bfa);
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.tickerMuted {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

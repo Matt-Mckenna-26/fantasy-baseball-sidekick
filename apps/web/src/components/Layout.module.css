@@ -1,0 +1,348 @@
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  padding: 0.75rem 1.5rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.headerBar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.brandSlot {
+  min-width: 0;
+}
+
+.title {
+  font-weight: 700;
+}
+
+.brandBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 0.9rem 0.35rem 0.4rem;
+  border: 1px solid rgba(109, 40, 217, 0.38);
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    rgba(109, 40, 217, 0.16) 0%,
+    rgba(15, 23, 42, 0.55) 100%
+  );
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  max-width: min(100%, 22rem);
+}
+
+.brandAvatar {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 2px solid rgba(167, 139, 250, 0.45);
+  box-shadow: 0 2px 8px rgba(109, 40, 217, 0.28);
+}
+
+.brandTitle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.brandTeam {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.brandTagline {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 1rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.navLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sparkleIcon {
+  display: block;
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  color: #c4b5fd;
+}
+
+.labFlaskIcon {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  color: #86efac;
+}
+
+.navLabel .liveDot {
+  margin-right: 0;
+}
+
+/* Small red dot marking the live view; pulses to read as "real-time". */
+.liveDot {
+  display: block;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: livePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 0.28rem rgba(239, 68, 68, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}
+
+.navLinkActive {
+  color: var(--text);
+  background: rgba(109, 40, 217, 0.25);
+}
+
+.main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 2rem 1.5rem;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.mainWide {
+  max-width: min(100%, 72rem);
+}
+
+/* Chat fills the viewport below the header — composer docks to the bottom. */
+.mainChat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  max-width: 48rem;
+}
+
+.shellChat {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.shellChat .mainChat {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.footer {
+  padding: 1rem 1.5rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  text-align: center;
+}
+
+.attribution {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.attribution:hover {
+  color: var(--text);
+}
+
+/* The official mark uses dark lettering, so sit it on a light chip to stay
+   legible on the dark footer without altering the brand colors. */
+.attributionLogo {
+  height: 1.75rem;
+  width: auto;
+  display: block;
+  padding: 0.3rem 0.55rem;
+  background: #fff;
+  border-radius: 6px;
+}
+
+@media (max-width: 640px) {
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    padding: calc(0.55rem + env(safe-area-inset-top, 0px)) 0.75rem 0.55rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  }
+
+  .headerBar {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'brand actions'
+      'nav nav';
+    gap: 0.45rem 0.5rem;
+  }
+
+  .brandSlot {
+    grid-area: brand;
+    min-width: 0;
+  }
+
+  .actions {
+    grid-area: actions;
+    flex-shrink: 0;
+  }
+
+  .title {
+    font-size: 0.9rem;
+    line-height: 1.3;
+  }
+
+  .brandBadge {
+    justify-content: flex-start;
+    max-width: min(100%, 14rem);
+    padding: 0.32rem 0.65rem 0.32rem 0.38rem;
+  }
+
+  .brandTeam {
+    font-size: 0.82rem;
+  }
+
+  .brandTagline {
+    font-size: 0.65rem;
+  }
+
+  /* Horizontal scroll nav — one compact row, no wrapping. */
+  .nav {
+    grid-area: nav;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 0.25rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    margin: 0 -0.75rem;
+    padding: 0.15rem 0.75rem 0.35rem;
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 0.75rem,
+      #000 calc(100% - 0.75rem),
+      transparent
+    );
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navLink {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    font-size: 0.78rem;
+    padding: 0.42rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+
+  .navLinkActive {
+    border-color: rgba(124, 58, 237, 0.45);
+  }
+
+  .footer {
+    padding: 0.75rem 1rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .attribution {
+    flex-wrap: wrap;
+    justify-content: center;
+    font-size: 0.78rem;
+    gap: 0.35rem;
+  }
+
+  .attributionLogo {
+    height: 1.5rem;
+    padding: 0.25rem 0.45rem;
+  }
+
+  .main {
+    padding: 1rem 0.75rem;
+    padding-left: calc(0.75rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(0.75rem + env(safe-area-inset-right, 0px));
+  }
+
+  .mainWide {
+    padding: 0.85rem 0.5rem;
+    padding-left: calc(0.5rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(0.5rem + env(safe-area-inset-right, 0px));
+  }
+}

@@ -12,12 +12,32 @@ const config = {
   webAppUrl: 'https://localhost:5173',
   sessionSecret: 'x'.repeat(16),
   port: 8787,
+  dataMode: 'mock',
 } satisfies AppConfig;
 
 function buildApp(overrides?: Partial<FantasyProvider>) {
   const tokenStore = new InMemoryTokenStore();
   const provider: FantasyProvider = {
     getMyLeagues: vi.fn().mockResolvedValue({ userGuid: 'G', leagues: [] }),
+    getLeagueRosters: vi.fn().mockResolvedValue({ leagueId: '1', teams: [] }),
+    getPlayerStats: vi.fn().mockResolvedValue({ leagueId: '1', columns: [], players: [] }),
+    getTeamRangeStats: vi.fn().mockResolvedValue({
+      leagueId: '1',
+      teamId: '1',
+      range: 'season',
+      battingColumns: [],
+      pitchingColumns: [],
+      players: [],
+    }),
+    getLeagueTeamStats: vi.fn().mockResolvedValue({
+      leagueId: '1',
+      bucket: 'season',
+      weeks: [],
+      battingColumns: [],
+      pitchingColumns: [],
+      teams: [],
+    }),
+    getLeagueStandings: vi.fn().mockResolvedValue({ leagueId: '1', teams: [] }),
     ...overrides,
   };
   return { app: createApp(config, { tokenStore, provider }), tokenStore, provider };
@@ -36,6 +56,25 @@ describe('API app', () => {
     const res = await request(app).get('/api/me/leagues');
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('unauthorized');
+  });
+
+  it('rosters and stats endpoints require a connected session (401)', async () => {
+    const { app } = buildApp();
+    const rosters = await request(app).get('/api/me/leagues/24281/rosters');
+    const stats = await request(app).get('/api/me/leagues/24281/stats');
+    expect(rosters.status).toBe(401);
+    expect(stats.status).toBe(401);
+    expect(rosters.body.error.code).toBe('unauthorized');
+  });
+
+  it('team-stats and standings endpoints require a connected session (401)', async () => {
+    const { app } = buildApp();
+    const teamStats = await request(app).get('/api/me/leagues/24281/team-stats');
+    const standings = await request(app).get('/api/me/leagues/24281/standings');
+    expect(teamStats.status).toBe(401);
+    expect(standings.status).toBe(401);
+    expect(teamStats.body.error.code).toBe('unauthorized');
+    expect(standings.body.error.code).toBe('unauthorized');
   });
 
   it('GET /auth/status reports not authenticated for a fresh session', async () => {
