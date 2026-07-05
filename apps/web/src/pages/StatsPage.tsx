@@ -50,10 +50,13 @@ const RANGES: { value: StatRange; label: string }[] = [
 const INITIAL_RANGE: StatRange = 'season';
 
 /** Max players charted at once, so the bars/lines stay readable. */
-const PLAYER_CAP = 12;
+const PLAYER_CAP = 10;
 
 /** How many top-ranked players seed the initial selection (and the "Top" preset). */
 const DEFAULT_SELECT_COUNT = 10;
+
+/** Max fantasy rosters loaded as tiles at once, for head-to-head team comparison. */
+const MAX_TEAMS = 2;
 
 /** Human label for a range value, reused in the compare chart subtitle. */
 function rangeLabel(range: StatRange): string {
@@ -328,8 +331,38 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     return [...byOwner.values()].sort((a, b) => a.owner.localeCompare(b.owner));
   }, [table.players]);
 
-  // Key of the loaded tiles, to highlight a team badge when its roster is loaded.
-  const tilesKey = [...tiles].sort().join('|');
+  // Which fantasy rosters are currently loaded as tiles (used to light up team badges).
+  const loadedOwners = teamShortcuts
+    .filter((t) => t.ids.length > 0 && t.ids.every((id) => tiles.includes(id)))
+    .map((t) => t.owner);
+
+  // Toggle a whole roster in/out of the tiles. Up to MAX_TEAMS rosters can be loaded at
+  // once for head-to-head comparison; the top PLAYER_CAP tiles stay charted and the rest
+  // become inactive tiles the user can toggle on. Adding past the limit evicts the oldest.
+  const capInactive = (list: string[]) => new Set(list.slice(PLAYER_CAP));
+  const toggleTeam = (team: { owner: string; ids: string[] }) => {
+    if (loadedOwners.includes(team.owner)) {
+      const remove = new Set(team.ids);
+      const next = tiles.filter((id) => !remove.has(id));
+      setTiles(next);
+      setInactive(capInactive(next));
+      return;
+    }
+    let base = tiles;
+    if (loadedOwners.length >= MAX_TEAMS) {
+      const oldest = loadedOwners
+        .map((owner) => {
+          const ids = teamShortcuts.find((s) => s.owner === owner)?.ids ?? [];
+          const firstIdx = Math.min(...ids.map((id) => tiles.indexOf(id)).filter((i) => i >= 0));
+          return { firstIdx, ids: new Set(ids) };
+        })
+        .sort((a, b) => a.firstIdx - b.firstIdx)[0];
+      if (oldest) base = tiles.filter((id) => !oldest.ids.has(id));
+    }
+    const next = [...base, ...team.ids.filter((id) => !base.includes(id))];
+    setTiles(next);
+    setInactive(capInactive(next));
+  };
 
   // Active players' current-range lines for the comparison bars, in selection order.
   const selectedLines = useMemo(
@@ -519,7 +552,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
               {teamShortcuts.length > 0 && (
                 <>
                   <p className={chartStyles.shortcutHint}>
-                    Load a team&rsquo;s {tab === 'batting' ? 'batters' : 'pitchers'}
+                    Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to compare
                   </p>
                   <div
                     className={chartStyles.teamToggles}
@@ -527,19 +560,14 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
                     aria-label="Load a fantasy team's players"
                   >
                     {teamShortcuts.map((t) => {
-                      const active = t.ids.length > 0 && [...t.ids].sort().join('|') === tilesKey;
+                      const active = loadedOwners.includes(t.owner);
                       return (
                         <button
                           key={t.owner}
                           type="button"
                           aria-pressed={active}
                           className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
-                          // Load the whole roster as sticky tiles; chart the top `cap`,
-                          // leave the rest as inactive tiles to toggle on individually.
-                          onClick={() => {
-                            setTiles(t.ids);
-                            setInactive(new Set(t.ids.slice(PLAYER_CAP)));
-                          }}
+                          onClick={() => toggleTeam(t)}
                         >
                           <EntityAvatar
                             label={t.owner}
