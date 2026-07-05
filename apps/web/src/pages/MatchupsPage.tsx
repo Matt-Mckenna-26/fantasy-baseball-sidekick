@@ -21,6 +21,7 @@ import { PlayerAvatar } from '../components/PlayerAvatar';
 import { MatchupCarousel } from '../components/MatchupCarousel';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
+import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
 import { buildStatPercentiles } from '../lib/percentile';
 import { toNumericValue } from '../lib/teamTrend';
 import styles from '../components/dataTable.module.css';
@@ -504,7 +505,7 @@ function PlayerStatsGrid({
   }, [columns]);
 
   const defaultColDef = useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true }),
+    () => ({ sortable: true, filter: true, resizable: true, filterParams: GRID_FILTER_PARAMS }),
     [],
   );
 

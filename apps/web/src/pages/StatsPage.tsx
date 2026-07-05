@@ -15,15 +15,19 @@ import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
-import { TeamPickemFilter } from '../components/TeamPickemFilter';
+import { ComparePlayersGuide } from '../components/ComparePlayersGuide';
+import { ComparePlayersDialog, type ComparePlayerOption } from '../components/ComparePlayersDialog';
+import { PickemFilter } from '../components/PickemFilter';
 import { ChartControlsPanel } from '../components/charts/ChartControlsPanel';
 import { ChartLoading } from '../components/charts/ChartLoading';
-import { PlayerComparisonChart } from '../components/charts/PlayerComparisonChart';
+import { PlayerMetricsGroupedChart } from '../components/charts/PlayerMetricsGroupedChart';
+import { ComparePlayerTiles } from '../components/charts/ComparePlayerTiles';
 import { PlayerTrendChart } from '../components/charts/PlayerTrendChart';
 import { PlayerTrendHelp } from '../components/charts/PlayerTrendHelp';
 import { PlayerPicker, type PlayerOption } from '../components/charts/PlayerPicker';
 import { buildTeamColorMap } from '../components/charts/palette';
-import { buildStatPercentiles, isLowerBetter } from '../lib/percentile';
+import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
+import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
 import {
   buildPlayerTrendSeries,
   fetchPlayerTrendWindows,
@@ -51,6 +55,9 @@ const INITIAL_RANGE: StatRange = 'season';
 
 /** Max players charted at once, so the bars/lines stay readable. */
 const PLAYER_CAP = 10;
+
+/** How many of the grid's current top rows the "compare" grouped chart plots. */
+const COMPARE_LIMIT = 10;
 
 /** How many top-ranked players seed the initial selection (and the "Top" preset). */
 const DEFAULT_SELECT_COUNT = 10;
@@ -100,6 +107,25 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   const [cache, setCache] = useState<PlayerStatsByRange>(() => ({ [INITIAL_RANGE]: initial }));
   const [statsLoading, setStatsLoading] = useState(false);
   const apiRef = useRef<GridApi<StatRow> | null>(null);
+
+  // The grid's current top rows (respecting sort + filter) feed the grouped "compare"
+  // chart. Refreshed on any model change so the chart tracks whatever is on top.
+  const [topRowIds, setTopRowIds] = useState<string[]>([]);
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
+  const syncTopRows = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    const ids: string[] = [];
+    const count = Math.min(COMPARE_LIMIT, api.getDisplayedRowCount());
+    for (let i = 0; i < count; i++) {
+      const id = api.getDisplayedRowAtIndex(i)?.data?.playerId;
+      if (id != null) ids.push(String(id));
+    }
+    // Keep the same reference when nothing changed, so the sync effect below doesn't churn.
+    setTopRowIds((prev) =>
+      prev.length === ids.length && prev.every((v, i) => v === ids[i]) ? prev : ids,
+    );
+  };
 
   // Latest cache for effects that shouldn't re-run on every cache change (fetch guards).
   const cacheRef = useRef(cache);
@@ -164,6 +190,11 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     [rows, columns, tab],
   );
 
+  const ranks = useMemo(
+    () => buildStatRanks(rows, columns, tab === 'pitching'),
+    [rows, columns, tab],
+  );
+
   const context = useMemo<StatCellContext>(
     () => ({ percentiles, statsLoading }),
     [percentiles, statsLoading],
@@ -173,6 +204,35 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   useEffect(() => {
     apiRef.current?.refreshCells({ force: true });
   }, [percentiles]);
+
+  // The grid's current top rows resolved back to stat lines, in displayed order, for the
+  // grouped "compare" card. Ranked against the whole pool via `percentiles` above.
+  const compareLines = useMemo(() => {
+    const byId = new Map(table.players.map((p) => [p.player.playerId, p]));
+    return topRowIds
+      .map((id) => byId.get(id))
+      .filter((p): p is PlayerStatLine => Boolean(p));
+  }, [topRowIds, table.players]);
+  const canCompare = compareLines.length >= 1;
+  const compareCardRef = useRef<HTMLElement | null>(null);
+
+  // Friendly "Compare players" flow: filter the grid to the chosen players (via the Player
+  // column's pick-em model); the always-on compare card then tracks them. No column controls.
+  const runCompareForPlayers = (ids: string[]) => {
+    const api = apiRef.current;
+    setShowCompareDialog(false);
+    if (!api || ids.length === 0) return;
+    const byId = new Map(table.players.map((p) => [p.player.playerId, p]));
+    const names = ids
+      .map((id) => byId.get(id)?.player.fullName)
+      .filter((n): n is string => Boolean(n));
+    if (names.length === 0) return;
+    api.setFilterModel({ ...api.getFilterModel(), fullName: names });
+    // Bring the compare card into view once the grid has re-filtered.
+    requestAnimationFrame(() =>
+      compareCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  };
 
   const columnDefs = useMemo<ColDef<StatRow>[]>(() => {
     const base: ColDef<StatRow>[] = [
@@ -194,7 +254,8 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         flex: 2,
         cellRenderer: PlayerCell,
         tooltipField: 'fullName',
-        filter: 'agTextColumnFilter',
+        filter: PickemFilter,
+        filterParams: { searchable: true, searchPlaceholder: 'Search players\u2026' },
       },
       {
         headerName: 'Team',
@@ -202,7 +263,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         minWidth: 160,
         flex: 1,
         cellRenderer: OwnerCell,
-        filter: TeamPickemFilter,
+        filter: PickemFilter,
       },
     ];
     const statCols: ColDef<StatRow>[] = columns.map((col) => ({
@@ -219,7 +280,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   }, [columns]);
 
   const defaultColDef = useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true }),
+    () => ({ sortable: true, filter: true, resizable: true, filterParams: GRID_FILTER_PARAMS }),
     [],
   );
 
@@ -234,11 +295,26 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     ? selectedMetric
     : defaultMetric;
   const metricColumn = columns.find((c) => c.key === effectiveMetric);
-  // Charts read like prose ("Saves"), so prefer Yahoo's full stat name (description)
-  // over the terse grid abbreviation (label). The short label still drives sort
-  // direction, since isLowerBetter matches on the abbreviation set.
+  // Trend chart reads like prose ("Saves"), so prefer Yahoo's full stat name (description)
+  // over the terse grid abbreviation (label).
   const metricLabel = metricColumn?.description ?? metricColumn?.label ?? effectiveMetric;
-  const metricLowerIsBetter = isLowerBetter(metricColumn?.label ?? '', tab === 'pitching');
+
+  // Compare chart shows every metric by default (grouped bars); users can hide some here.
+  const [hiddenMetrics, setHiddenMetrics] = useState<ReadonlySet<string>>(new Set());
+  const toggleMetric = (key: string) =>
+    setHiddenMetrics((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // Double-click a metric chip: isolate it (hide every other metric).
+  const isolateMetric = (key: string) =>
+    setHiddenMetrics(new Set(columns.filter((c) => c.key !== key).map((c) => c.key)));
+  const compareColumns = useMemo(
+    () => columns.filter((c) => !hiddenMetrics.has(c.key)),
+    [columns, hiddenMetrics],
+  );
 
   // Player series is kept per tab: batting and pitching categories don't overlap, so each
   // tab has its own set. Tiles are the sticky chips shown; `inactive` are the ones toggled
@@ -259,6 +335,22 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   const activeIds = useMemo(() => tiles.filter((id) => !inactive.has(id)), [tiles, inactive]);
 
   const presetIds = useMemo(() => topByRank(table.players, DEFAULT_SELECT_COUNT), [table.players]);
+
+  // Seed the chart's player series from the grid's current top rows (the "compare" set)
+  // and keep it in sync as the grid is sorted/filtered. Users can still tweak via the
+  // picker below until the next grid-driven change. Ignore stale ids mid tab-switch.
+  useEffect(() => {
+    if (topRowIds.length === 0) return;
+    const valid = new Set(table.players.map((p) => p.player.playerId));
+    if (!topRowIds.every((id) => valid.has(id))) return;
+    if (tab === 'batting') {
+      setTilesBatting(topRowIds);
+      setInactiveBatting(new Set());
+    } else {
+      setTilesPitching(topRowIds);
+      setInactivePitching(new Set());
+    }
+  }, [topRowIds, tab, table.players]);
 
   // --- Selection actions (tile lifecycle + active/inactive toggling). ---
   const addTile = (id: string) => {
@@ -307,6 +399,20 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
           id: p.player.playerId,
           name: p.player.fullName,
           ...(p.player.mlbTeamAbbr ? { abbr: p.player.mlbTeamAbbr } : {}),
+        })),
+    [table.players],
+  );
+
+  // Richer options (headshot + owner) for the friendly Compare players dialog.
+  const compareDialogOptions = useMemo<ComparePlayerOption[]>(
+    () =>
+      [...table.players]
+        .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity))
+        .map((p) => ({
+          id: p.player.playerId,
+          name: p.player.fullName,
+          ...(p.player.headshotUrl ? { headshotUrl: p.player.headshotUrl } : {}),
+          ...(p.owner ? { owner: p.owner } : {}),
         })),
     [table.players],
   );
@@ -421,6 +527,14 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
 
   return (
     <section>
+      <ComparePlayersGuide />
+      <ComparePlayersDialog
+        open={showCompareDialog}
+        onClose={() => setShowCompareDialog(false)}
+        options={compareDialogOptions}
+        max={COMPARE_LIMIT}
+        onCompare={runCompareForPlayers}
+      />
       <div className={styles.page__header}>
         <div>
           <h1>Player Stats</h1>
@@ -485,6 +599,19 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             {tab === 'batting' ? 'Batters' : 'Pitchers'}
           </h2>
           <StatsGridHelp />
+          <button
+            type="button"
+            className={gridStyles.comparePlayersBtn}
+            onClick={() => setShowCompareDialog(true)}
+            title="Search players and compare them"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <rect x="1" y="8" width="3" height="7" rx="0.5" />
+              <rect x="6.5" y="4" width="3" height="11" rx="0.5" />
+              <rect x="12" y="1" width="3" height="14" rx="0.5" />
+            </svg>
+            Compare players
+          </button>
         </div>
         <div className={gridStyles.gridWrap}>
           <AgGridReact<StatRow>
@@ -497,6 +624,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             onGridReady={(e) => {
               apiRef.current = e.api;
             }}
+            onModelUpdated={syncTopRows}
             animateRows
             suppressCellFocus
             tooltipShowDelay={300}
@@ -507,127 +635,187 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         </div>
       </div>
 
+      {/* TODO: sync chart-control changes (metric/range/player selection) to the grid and
+          charts automatically, so all three views stay in lockstep without manual re-entry. */}
+      {columns.length > 0 && (
+        <ChartControlsPanel
+          anchorRef={chartsSectionRef}
+          seenKey="player-chart-controls-seen"
+          alwaysVisible
+        >
+          <div className={chartStyles.controlGroup}>
+            <span className={chartStyles.controlGroupLabel}>Metrics (compare)</span>
+            <p className={chartStyles.shortcutHint}>
+              Click a metric to toggle, double-click to isolate
+            </p>
+            <div
+              className={chartStyles.teamToggles}
+              role="group"
+              aria-label="Show or hide compare metrics"
+            >
+              <div className={chartStyles.teamToggleActions}>
+                <button
+                  type="button"
+                  className={chartStyles.teamToggleAction}
+                  onClick={() => setHiddenMetrics(new Set())}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={chartStyles.teamToggleAction}
+                  onClick={() => setHiddenMetrics(new Set(columns.map((c) => c.key)))}
+                >
+                  None
+                </button>
+              </div>
+              {columns.map((col) => {
+                const hidden = hiddenMetrics.has(col.key);
+                return (
+                  <button
+                    key={col.key}
+                    type="button"
+                    aria-pressed={!hidden}
+                    title={`${col.description ?? col.label} \u2014 click to toggle, double-click to isolate`}
+                    className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
+                    onClick={() => toggleMetric(col.key)}
+                    onDoubleClick={() => isolateMetric(col.key)}
+                  >
+                    {col.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={chartStyles.controlGroup}>
+            <label className={chartStyles.controlGroupLabel} htmlFor="player-trend-metric">
+              Trend metric
+            </label>
+            <select
+              id="player-trend-metric"
+              className={styles.select}
+              value={effectiveMetric}
+              onChange={(e) => setSelectedMetric(e.target.value)}
+            >
+              {columns.map((col) => (
+                <option key={col.key} value={col.key}>
+                  {col.description ?? col.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={chartStyles.controlGroup}>
+            <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
+            <div className={styles.rangeToggle} role="group" aria-label="Compare range">
+              {RANGES.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+                  aria-pressed={r.value === range}
+                  onClick={() => setRange(r.value)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={chartStyles.controlGroup}>
+            <span className={chartStyles.controlGroupLabel}>
+              Players ({tab === 'batting' ? 'Batters' : 'Pitchers'})
+            </span>
+            {teamShortcuts.length > 0 && (
+              <>
+                <p className={chartStyles.shortcutHint}>
+                  Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to compare
+                </p>
+                <div
+                  className={chartStyles.teamToggles}
+                  role="group"
+                  aria-label="Load a fantasy team's players"
+                >
+                  {teamShortcuts.map((t) => {
+                    const active = loadedOwners.includes(t.owner);
+                    return (
+                      <button
+                        key={t.owner}
+                        type="button"
+                        aria-pressed={active}
+                        className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
+                        onClick={() => toggleTeam(t)}
+                      >
+                        <EntityAvatar
+                          label={t.owner}
+                          {...(t.logoUrl ? { imageUrl: t.logoUrl } : {})}
+                        />
+                        {t.owner}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            <PlayerPicker
+              options={playerOptions}
+              tiles={tiles}
+              inactive={inactive}
+              colorMap={colorMap}
+              cap={PLAYER_CAP}
+              presetCount={presetIds.length}
+              onAdd={addTile}
+              onRemove={removeTile}
+              onToggle={toggleTile}
+              onSolo={soloTile}
+              onClear={clearTiles}
+              onPreset={loadPreset}
+            />
+          </div>
+        </ChartControlsPanel>
+      )}
+
+      {canCompare ? (
+        <section
+          id="compare"
+          ref={compareCardRef}
+          className={`${chartStyles.card} ${gridStyles.compareCard} ${gridStyles.scrollAnchor}`}
+          aria-label="Player metric comparison"
+        >
+          <div className={chartStyles.header}>
+            <div>
+              <h2 className={chartStyles.title}>
+                Comparing {compareLines.length} {tab === 'batting' ? 'batters' : 'pitchers'}
+              </h2>
+              <p className={chartStyles.subtitle}>
+                Percentile among rostered {tab === 'batting' ? 'batters' : 'pitchers'} &middot;{' '}
+                {rangeLabel(range)} &middot; {compareColumns.length} of {columns.length} metrics
+              </p>
+            </div>
+          </div>
+          {compareColumns.length === 0 ? (
+            <p className={chartStyles.empty}>Pick at least one metric in chart controls.</p>
+          ) : (
+            <>
+              <PlayerMetricsGroupedChart
+                players={compareLines}
+                columns={compareColumns}
+                percentiles={percentiles}
+              />
+              <ComparePlayerTiles
+                players={compareLines}
+                columns={compareColumns}
+                percentiles={percentiles}
+                ranks={ranks}
+              />
+            </>
+          )}
+        </section>
+      ) : null}
+
       {columns.length > 0 && (
         <div className={gridStyles.chartsSection} ref={chartsSectionRef}>
-          <ChartControlsPanel anchorRef={chartsSectionRef} seenKey="player-chart-controls-seen">
-            <div className={chartStyles.controlGroup}>
-              <label className={chartStyles.controlGroupLabel} htmlFor="player-metric">
-                Metric
-              </label>
-              <select
-                id="player-metric"
-                className={styles.select}
-                value={effectiveMetric}
-                onChange={(e) => setSelectedMetric(e.target.value)}
-              >
-                {columns.map((col) => (
-                  <option key={col.key} value={col.key}>
-                    {col.description ?? col.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className={chartStyles.controlGroup}>
-              <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
-              <div className={styles.rangeToggle} role="group" aria-label="Compare range">
-                {RANGES.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-                    aria-pressed={r.value === range}
-                    onClick={() => setRange(r.value)}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={chartStyles.controlGroup}>
-              <span className={chartStyles.controlGroupLabel}>
-                Players ({tab === 'batting' ? 'Batters' : 'Pitchers'})
-              </span>
-              {teamShortcuts.length > 0 && (
-                <>
-                  <p className={chartStyles.shortcutHint}>
-                    Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to compare
-                  </p>
-                  <div
-                    className={chartStyles.teamToggles}
-                    role="group"
-                    aria-label="Load a fantasy team's players"
-                  >
-                    {teamShortcuts.map((t) => {
-                      const active = loadedOwners.includes(t.owner);
-                      return (
-                        <button
-                          key={t.owner}
-                          type="button"
-                          aria-pressed={active}
-                          className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
-                          onClick={() => toggleTeam(t)}
-                        >
-                          <EntityAvatar
-                            label={t.owner}
-                            {...(t.logoUrl ? { imageUrl: t.logoUrl } : {})}
-                          />
-                          {t.owner}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-              <PlayerPicker
-                options={playerOptions}
-                tiles={tiles}
-                inactive={inactive}
-                colorMap={colorMap}
-                cap={PLAYER_CAP}
-                presetCount={presetIds.length}
-                onAdd={addTile}
-                onRemove={removeTile}
-                onToggle={toggleTile}
-                onSolo={soloTile}
-                onClear={clearTiles}
-                onPreset={loadPreset}
-              />
-            </div>
-          </ChartControlsPanel>
-
-          <section
-            id="compare"
-            className={`${chartStyles.card} ${gridStyles.scrollAnchor}`}
-            aria-label={`${metricLabel} comparison`}
-          >
-            <div className={chartStyles.header}>
-              <div>
-                <h2 className={chartStyles.title}>{metricLabel} by player</h2>
-                <p className={chartStyles.subtitle}>{rangeLabel(range)}</p>
-              </div>
-            </div>
-            <div className={chartStyles.chartArea}>
-              {statsLoading && (
-                <div className={chartStyles.chartBusy} aria-hidden="true">
-                  <span className={chartStyles.spinner} />
-                </div>
-              )}
-              {activeIds.length === 0 ? (
-                <p className={chartStyles.empty}>Search and add players above to compare.</p>
-              ) : (
-                <PlayerComparisonChart
-                  players={selectedLines}
-                  metricKey={effectiveMetric}
-                  metricLabel={metricLabel}
-                  lowerIsBetter={metricLowerIsBetter}
-                  colorMap={colorMap}
-                />
-              )}
-            </div>
-          </section>
-
           <section
             id="trends"
             ref={trendSectionRef}

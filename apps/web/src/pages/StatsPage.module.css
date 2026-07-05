@@ -79,6 +79,27 @@
   color: var(--text);
 }
 
+.pickemSearch {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.pickemSearch::placeholder {
+  color: var(--muted);
+}
+
+.pickemSearch:focus {
+  outline: none;
+  border-color: var(--accent-hover);
+}
+
 .pickemActions {
   display: flex;
   gap: 0.5rem;
@@ -179,6 +200,306 @@
 
 .tableCardTitleInRow {
   margin: 0;
+}
+
+.compareChartBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compareChartBtn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.compareChartBtn:hover,
+.compareChartBtn[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--accent-hover);
+  background: rgba(109, 40, 217, 0.2);
+}
+
+.compareCard {
+  margin-top: 1rem;
+}
+
+/* Friendly primary CTA that opens the Compare players dialog. */
+.comparePlayersBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-hover);
+  background: var(--accent);
+  color: #f8fafc;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.comparePlayersBtn:hover {
+  background: var(--accent-hover);
+}
+
+.comparePlayersBtn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* Compare players dialog (search + player cards). Reuses .guideOverlay for the backdrop. */
+.compareDialog {
+  width: min(32rem, 100%);
+  max-height: min(88vh, 44rem);
+  overflow-y: auto;
+  padding: 1.25rem 1.35rem 1.35rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+
+.compareDialogHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.compareDialogClose {
+  flex: 0 0 auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.compareDialogClose:hover {
+  color: var(--text);
+  border-color: var(--accent-hover);
+}
+
+.compareMatches {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.compareMatchItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.compareMatchItem:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.compareMatchName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compareMatchOwner {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.compareChosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  min-height: 2rem;
+}
+
+.compareChosenCard {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(109, 40, 217, 0.15);
+  font-size: 0.8rem;
+}
+
+.compareChosenName {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compareChosenRemove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+
+.compareChosenRemove:hover {
+  color: var(--text);
+}
+
+.compareDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}
+
+.compareDialogCancel {
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compareDialogCancel:hover {
+  color: var(--text);
+  border-color: var(--accent-hover);
+}
+
+.compareDialogPrimary {
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent-hover);
+  background: var(--accent);
+  color: #f8fafc;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compareDialogPrimary:hover {
+  background: var(--accent-hover);
+}
+
+.compareDialogPrimary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* First-time "compare players" guide: full-screen dim + centered card. */
+.guideOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.guideCard {
+  width: min(30rem, 100%);
+  max-height: min(85vh, 40rem);
+  overflow-y: auto;
+  padding: 1.4rem 1.5rem 1.5rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+
+.guideKicker {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(109, 40, 217, 0.25);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.guideTitle {
+  margin: 0.7rem 0 0.4rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.guideLead {
+  margin: 0 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.guideSteps {
+  margin: 0 0 1.25rem;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.guideSteps li::marker {
+  color: var(--accent-hover);
+  font-weight: 700;
+}
+
+.guidePrimary {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent-hover);
+  background: var(--accent);
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.guidePrimary:hover {
+  background: var(--accent-hover);
 }
 
 .gridHelp {

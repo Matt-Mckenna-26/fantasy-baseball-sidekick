@@ -14,12 +14,13 @@ import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
-import { TeamPickemFilter } from '../components/TeamPickemFilter';
+import { PickemFilter } from '../components/PickemFilter';
 import { TeamComparisonChart } from '../components/charts/TeamComparisonChart';
 import { TeamTrendChart } from '../components/charts/TeamTrendChart';
 import { ChartLoading } from '../components/charts/ChartLoading';
 import { ChartControlsPanel } from '../components/charts/ChartControlsPanel';
 import { buildTeamColorMap } from '../components/charts/palette';
+import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
 import { buildStatPercentiles, isLowerBetter } from '../lib/percentile';
 import {
   buildTrendSeries,
@@ -182,7 +183,7 @@ function TeamStatsView({
         flex: 2,
         cellRenderer: TeamCell,
         tooltipField: 'teamName',
-        filter: TeamPickemFilter,
+        filter: PickemFilter,
       },
     ];
     const statCols: ColDef<TeamStatRow>[] = columns.map((col) => ({
@@ -199,7 +200,7 @@ function TeamStatsView({
   }, [columns]);
 
   const defaultColDef = useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true }),
+    () => ({ sortable: true, filter: true, resizable: true, filterParams: GRID_FILTER_PARAMS }),
     [],
   );
 
@@ -234,6 +235,9 @@ function TeamStatsView({
       return next;
     });
   };
+  // Double-click a badge: isolate that team (hide every other team in both charts).
+  const soloTeam = (teamId: string) =>
+    setHiddenTeams(new Set(data.teams.filter((t) => t.teamId !== teamId).map((t) => t.teamId)));
   const visibleTeams = useMemo(
     () => data.teams.filter((t) => !hiddenTeams.has(t.teamId)),
     [data.teams, hiddenTeams],
@@ -403,6 +407,9 @@ function TeamStatsView({
 
             <div className={chartStyles.controlGroup}>
               <span className={chartStyles.controlGroupLabel}>Teams</span>
+              <p className={chartStyles.shortcutHint}>
+                Click a team to toggle, double-click to isolate
+              </p>
               <div className={chartStyles.teamToggles} role="group" aria-label="Show or hide teams">
                 <div className={chartStyles.teamToggleActions}>
                   <button
@@ -427,8 +434,10 @@ function TeamStatsView({
                       key={t.teamId}
                       type="button"
                       aria-pressed={!hidden}
+                      title="Click to toggle, double-click to isolate"
                       className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
                       onClick={() => toggleTeam(t.teamId)}
+                      onDoubleClick={() => soloTeam(t.teamId)}
                     >
                       <span
                         className={chartStyles.teamSwatch}

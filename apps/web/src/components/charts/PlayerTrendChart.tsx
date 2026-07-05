@@ -112,7 +112,7 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
   const { domain, ticks } = fitScale(plotted);
 
   return (
-    <div style={{ width: '100%', height: 380 }}>
+    <div style={{ width: '100%', height: 475 }}>
       <ResponsiveContainer>
         <LineChart data={rows} margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
           {/* Heat backdrop: reddish toward the top (high percentile), blueish toward

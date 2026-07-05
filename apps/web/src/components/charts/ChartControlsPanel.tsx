@@ -45,6 +45,7 @@ export function ChartControlsPanel({
   anchorRef,
   seenKey = DEFAULT_SEEN_KEY,
   showInlineTrigger = true,
+  alwaysVisible = false,
 }: {
   children: ReactNode;
   anchorRef: RefObject<HTMLElement | null>;
@@ -52,9 +53,14 @@ export function ChartControlsPanel({
   seenKey?: string;
   /** Visible opener above the charts for users who miss the floating icon. */
   showInlineTrigger?: boolean;
+  /** Keep the floating icon pinned regardless of scroll (controls always relevant). */
+  alwaysVisible?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [inView, setInView] = useState(false);
+  // The floating icon is pinned top-right, where it can cover the header's user info.
+  // Only reveal it once the header has scrolled clear of the icon's pinned zone.
+  const [headerClear, setHeaderClear] = useState(false);
   const [seen, setSeen] = useState(() => {
     try {
       return localStorage.getItem(seenKey) === '1';
@@ -99,10 +105,25 @@ export function ChartControlsPanel({
     return () => observer.disconnect();
   }, [anchorRef]);
 
-  // Collapse when the charts scroll away, so the panel never floats over other views.
+  // Hide the floating icon while the header still overlaps its top-right pinned zone
+  // (~1.25rem from the top), so it never blocks the user info when scrolled to the top.
   useEffect(() => {
-    if (!inView) setOpen(false);
-  }, [inView]);
+    const header = document.querySelector('header');
+    const update = () => setHeaderClear(!header || header.getBoundingClientRect().bottom <= 12);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  // Collapse when the charts scroll away, so the panel never floats over other views.
+  // When pinned (alwaysVisible), leave it to the user to close via icon/Escape.
+  useEffect(() => {
+    if (!alwaysVisible && !inView) setOpen(false);
+  }, [alwaysVisible, inView]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,7 +153,7 @@ export function ChartControlsPanel({
         </div>
       )}
 
-      {(inView || open) && (
+      {headerClear && (alwaysVisible || inView || open) && (
         <button
           type="button"
           className={styles.fab}

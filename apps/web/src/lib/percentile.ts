@@ -88,3 +88,34 @@ export function buildStatPercentiles(
   }
   return lookup;
 }
+
+/**
+ * Build a per-column rank lookup over the current player pool. For each stat column,
+ * returns a function mapping a raw value to its 1-based competition rank (1 = best) and
+ * the pool size, among all players that have a numeric value for that column. Lower-is-
+ * better categories rank ascending so "1st" always means the best value.
+ */
+export function buildStatRanks(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  columns: ReadonlyArray<StatColumn>,
+  isPitching: boolean,
+): Map<string, (value: number) => { rank: number; total: number }> {
+  const lookup = new Map<string, (value: number) => { rank: number; total: number }>();
+  for (const col of columns) {
+    const values: number[] = [];
+    for (const row of rows) {
+      const v = row[col.key];
+      if (typeof v === 'number' && Number.isFinite(v)) values.push(v);
+    }
+    if (values.length === 0) continue;
+    values.sort((a, b) => a - b);
+    const n = values.length;
+    const invert = isLowerBetter(col.label, isPitching);
+    lookup.set(col.key, (value: number) => {
+      // Count players strictly better, so ties share a rank (competition ranking).
+      const better = invert ? lowerBound(values, value) : n - upperBound(values, value);
+      return { rank: better + 1, total: n };
+    });
+  }
+  return lookup;
+}
