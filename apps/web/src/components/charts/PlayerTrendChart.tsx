@@ -109,7 +109,6 @@ function TrendLegendTable({
   ranked,
   hasL21,
   hasL14,
-  colorMap,
   hoveredId,
   activeRowRef,
   hideAvatars = false,
@@ -118,7 +117,6 @@ function TrendLegendTable({
   ranked: TrendLegendRow[];
   hasL21: boolean;
   hasL14: boolean;
-  colorMap: Map<string, string>;
   hoveredId?: string | null;
   activeRowRef?: RefObject<HTMLDivElement | null>;
   /** Omit the per-row avatar (used when series are metrics, not players). */
@@ -411,7 +409,6 @@ function TrendTooltip({
         ranked={list}
         hasL21={hasL21}
         hasL14={hasL14}
-        colorMap={colorMap}
         hoveredId={hoveredId}
         activeRowRef={activeRowRef}
         hideAvatars={hideAvatars}

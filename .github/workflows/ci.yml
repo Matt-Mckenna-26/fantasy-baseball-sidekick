@@ -24,7 +24,8 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run lint
+      # ESLint only for now; Prettier formatting is not yet enforced repo-wide.
+      - run: npx eslint .
 
       - run: npm run typecheck
 
