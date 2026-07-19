@@ -1,37 +1,50 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
+  LeagueFreeAgentsResponse,
   LeagueSummary,
   PlayerStatLine,
   PlayerStatsResponse,
   StatRange,
-  StatValue,
 } from '@fcm/contracts';
 import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
-import { themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
-import { getPlayerStats } from '../api/client';
+import {
+  themeQuartz,
+  type ColDef,
+  type GetRowIdParams,
+  type GridApi,
+  type IRowNode,
+  type RowClickedEvent,
+} from 'ag-grid-community';
+import { getAdvancedLeagueStats, getFreeAgents, getPlayerStats } from '../api/client';
+import { useSession } from '../context/SessionContext';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
+import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerNameButton } from '../components/PlayerNameButton';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
-import { ComparePlayersGuide } from '../components/ComparePlayersGuide';
-import { ComparePlayersDialog, type ComparePlayerOption } from '../components/ComparePlayersDialog';
+import { CompareGuide } from '../components/CompareGuide';
+import { CompareEntitiesDialog } from '../components/CompareEntitiesDialog';
 import { PickemFilter } from '../components/PickemFilter';
 import { ChartControlsPanel } from '../components/charts/ChartControlsPanel';
 import { ChartLoading } from '../components/charts/ChartLoading';
-import { PlayerMetricsGroupedChart } from '../components/charts/PlayerMetricsGroupedChart';
-import { ComparePlayerTiles } from '../components/charts/ComparePlayerTiles';
+import { CompareMetricsPanel } from '../components/charts/CompareMetricsPanel';
+import type { CompareEntity, CompareEntityOption } from '../components/charts/compareEntity';
 import { PlayerTrendChart } from '../components/charts/PlayerTrendChart';
 import { PlayerTrendHelp } from '../components/charts/PlayerTrendHelp';
 import { PlayerPicker, type PlayerOption } from '../components/charts/PlayerPicker';
 import { buildTeamColorMap } from '../components/charts/palette';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
 import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
+import { scoringColumns, toCompareEntity, toStatRow, type StatRow } from '../lib/statPool';
 import {
   buildPlayerTrendSeries,
+  fetchFreeAgentTrendWindows,
   fetchPlayerTrendWindows,
-  PLAYER_TREND_WINDOWS,
+  playerTrendWindows,
   type PlayerStatsByRange,
 } from '../lib/playerTrend';
 import chartStyles from '../components/charts/charts.module.css';
@@ -40,12 +53,10 @@ import gridStyles from './StatsPage.module.css';
 
 type Tab = 'batting' | 'pitching';
 
-/** Flat per-player grid row: fixed meta fields plus one numeric + one display value per stat. */
-type StatRow = Record<string, string | number | null>;
-
 const RANGES: { value: StatRange; label: string }[] = [
   { value: 'today', label: 'Today' },
   { value: 'last7', label: 'Last 7' },
+  { value: 'last14', label: 'Last 14' },
   { value: 'last30', label: 'Last 30' },
   { value: 'season', label: 'Season' },
 ];
@@ -58,6 +69,12 @@ const PLAYER_CAP = 10;
 
 /** How many of the grid's current top rows the "compare" grouped chart plots. */
 const COMPARE_LIMIT = 10;
+
+/** Stable empty table so the advanced view has a valid shape before its data loads. */
+const EMPTY_TABLE: PlayerStatsResponse['batting'] = { columns: [], players: [] };
+
+/** Which category set the grid/compare show: league scoring stats or MLB advanced/expected. */
+type ColumnSet = 'scoring' | 'advanced';
 
 /** How many top-ranked players seed the initial selection (and the "Top" preset). */
 const DEFAULT_SELECT_COUNT = 10;
@@ -102,10 +119,22 @@ export function StatsPage() {
 }
 
 function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: LeagueSummary }) {
+  const { session } = useSession();
+  // Last 14 is an MLB-source-only window; only offer it when the server advertises it.
+  const supportsLast14 = session.status === 'connected' && session.supportsLast14;
+  const visibleRanges = useMemo(
+    () => RANGES.filter((r) => r.value !== 'last14' || supportsLast14),
+    [supportsLast14],
+  );
   const [tab, setTab] = useState<Tab>('batting');
   const [range, setRange] = useState<StatRange>(INITIAL_RANGE);
+  const [columnSet, setColumnSet] = useState<ColumnSet>('scoring');
+  const isAdvanced = columnSet === 'advanced';
   const [cache, setCache] = useState<PlayerStatsByRange>(() => ({ [INITIAL_RANGE]: initial }));
   const [statsLoading, setStatsLoading] = useState(false);
+  // League-wide advanced/expected stats (season-only), fetched once when first switched on.
+  const [advData, setAdvData] = useState<PlayerStatsResponse | undefined>(undefined);
+  const [advError, setAdvError] = useState(false);
   const apiRef = useRef<GridApi<StatRow> | null>(null);
 
   // The grid's current top rows (respecting sort + filter) feed the grouped "compare"
@@ -155,49 +184,121 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     };
   }, [league.leagueId, range]);
 
-  const table = tab === 'batting' ? data.batting : data.pitching;
+  // Fetch the league's advanced/expected table the first time the Advanced view is opened.
+  useEffect(() => {
+    if (!isAdvanced || advData) return;
+    let stale = false;
+    setAdvError(false);
+    getAdvancedLeagueStats(league.leagueId)
+      .then((res) => {
+        if (!stale) setAdvData(res);
+      })
+      .catch(() => {
+        if (!stale) setAdvError(true);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [isAdvanced, advData, league.leagueId]);
+
+  // Active table: advanced view swaps in the expected-stat table (season-only, includes free
+  // agents already); scoring view uses the selected range's window.
+  const advTable = advData ? (tab === 'batting' ? advData.batting : advData.pitching) : undefined;
+  const table = isAdvanced
+    ? (advTable ?? EMPTY_TABLE)
+    : tab === 'batting'
+      ? data.batting
+      : data.pitching;
+  // Grid overlay + dimmed cells while the advanced table is still loading (not on error).
+  const advPending = isAdvanced && !advData && !advError;
+
+  // Free agents for the current window, fetched in parallel and merged into the grid so the
+  // "Show FA only" filter and waiver scanning work without a separate view. Cached per range.
+  const [faCache, setFaCache] = useState<Partial<Record<StatRange, LeagueFreeAgentsResponse>>>({});
+  const faCacheRef = useRef(faCache);
+  faCacheRef.current = faCache;
+  useEffect(() => {
+    if (faCacheRef.current[range]) return;
+    let stale = false;
+    getFreeAgents(league.leagueId, range, { silent: true })
+      .then((res) => {
+        if (!stale) setFaCache((c) => ({ ...c, [range]: res }));
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [league.leagueId, range]);
+  // The advanced table already folds in free agents, so its own players list is the pool; the
+  // scoring view merges the per-range free-agent table below.
+  const faTable = isAdvanced
+    ? undefined
+    : tab === 'batting'
+      ? faCache[range]?.batting
+      : faCache[range]?.pitching;
 
   // H/AB is a raw hits-over-at-bats display column (kept only in Rosters), not a scoring
-  // category we grid, rank, or chart here, so drop it everywhere on this page.
+  // category we grid, rank, or chart here, so drop it in the scoring view. Advanced columns
+  // carry their own explicit set (and direction), so pass them straight through.
   const columns = useMemo(
-    () => table.columns.filter((c) => c.label.trim().toUpperCase() !== 'H/AB'),
-    [table.columns],
+    () => (isAdvanced ? table.columns : scoringColumns(table.columns)),
+    [isAdvanced, table.columns],
   );
 
+  // The default rank/percentile pool: rostered players only, so ranks stay stable and a free
+  // agent shows where they'd slot in among rostered players (see poolRows for the FA-only case).
+  const rosteredRows = useMemo<StatRow[]>(
+    () => table.players.map((line) => toStatRow(line, columns)),
+    [table.players, columns],
+  );
+
+  // Grid rows = rostered + free agents (deduped by playerId; rostered wins).
   const rows = useMemo<StatRow[]>(() => {
-    return table.players.map((line) => {
-      const row: StatRow = {
-        playerId: line.player.playerId,
-        fullName: line.player.fullName,
-        mlbTeamAbbr: line.player.mlbTeamAbbr ?? null,
-        headshotUrl: line.player.headshotUrl ?? null,
-        owner: line.owner ?? null,
-        ownerLogoUrl: line.ownerLogoUrl ?? null,
-        overallRank: line.overallRank ?? null,
-      };
-      const byKey = new Map(line.stats.map((s) => [s.key, s.value]));
-      for (const col of columns) {
-        const raw = byKey.get(col.key);
-        row[col.key] = toNumericValue(raw);
-        row[`${col.key}__d`] = toDisplay(raw);
-      }
-      return row;
-    });
-  }, [table.players, columns]);
+    if (!faTable) return rosteredRows;
+    const seen = new Set(rosteredRows.map((r) => String(r.playerId)));
+    const faRows = faTable.players
+      .filter((line) => !seen.has(line.player.playerId))
+      .map((line) => toStatRow(line, columns));
+    return [...rosteredRows, ...faRows];
+  }, [rosteredRows, faTable, columns]);
+
+  // Chartable pool = rostered + free agents (deduped; rostered wins). Everything the charts,
+  // picker, and Compare dialog resolve against reads from here, so a free agent that lands as
+  // a grid top row (or is searched/added) is chartable just like a rostered player. Ranks and
+  // percentiles come from the rostered-only pool by default (see poolRows), so a free agent
+  // shows where they'd slot; the "Free agents only" filter widens that pool to include them.
+  const chartPlayers = useMemo<PlayerStatLine[]>(() => {
+    if (!faTable) return table.players;
+    const seen = new Set(table.players.map((p) => p.player.playerId));
+    return [...table.players, ...faTable.players.filter((line) => !seen.has(line.player.playerId))];
+  }, [table.players, faTable]);
+
+  // "Free agents only" filter toggle. Declared here (above the pool memos) because it also
+  // selects which pool the ranks/percentiles rank against.
+  const [faOnly, setFaOnly] = useState(false);
+
+  // When scanning free agents only, rank/color against the full on-screen pool (rostered +
+  // free agents) so the heat reflects the data set being shown. Otherwise use the rostered-
+  // only pool, which keeps colors stable as free-agent data streams in after first paint.
+  const poolRows = faOnly ? rows : rosteredRows;
 
   const percentiles = useMemo(
-    () => buildStatPercentiles(rows, columns, tab === 'pitching'),
-    [rows, columns, tab],
+    () => buildStatPercentiles(poolRows, columns, tab === 'pitching'),
+    [poolRows, columns, tab],
   );
 
   const ranks = useMemo(
-    () => buildStatRanks(rows, columns, tab === 'pitching'),
-    [rows, columns, tab],
+    () => buildStatRanks(poolRows, columns, tab === 'pitching'),
+    [poolRows, columns, tab],
   );
 
   const context = useMemo<StatCellContext>(
-    () => ({ percentiles, statsLoading }),
-    [percentiles, statsLoading],
+    () => ({
+      percentiles,
+      statsLoading: statsLoading || advPending,
+      ...(faOnly ? { scopeSuffix: 'among rostered + free agents' } : {}),
+    }),
+    [percentiles, statsLoading, advPending, faOnly],
   );
 
   // Percentiles depend on the whole pool, so a new lookup must repaint every cell.
@@ -208,13 +309,132 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   // The grid's current top rows resolved back to stat lines, in displayed order, for the
   // grouped "compare" card. Ranked against the whole pool via `percentiles` above.
   const compareLines = useMemo(() => {
-    const byId = new Map(table.players.map((p) => [p.player.playerId, p]));
-    return topRowIds
-      .map((id) => byId.get(id))
-      .filter((p): p is PlayerStatLine => Boolean(p));
-  }, [topRowIds, table.players]);
+    const byId = new Map(chartPlayers.map((p) => [p.player.playerId, p]));
+    return topRowIds.map((id) => byId.get(id)).filter((p): p is PlayerStatLine => Boolean(p));
+  }, [topRowIds, chartPlayers]);
   const canCompare = compareLines.length >= 1;
   const compareCardRef = useRef<HTMLElement | null>(null);
+
+  // Grid's compare set as generic entities for the shared grouped chart + tiles footer.
+  const compareEntities = useMemo<CompareEntity[]>(
+    () => compareLines.map(toCompareEntity),
+    [compareLines],
+  );
+
+  // --- Free-agent filter + pinned focus row ---------------------------------------------
+  const [searchParams] = useSearchParams();
+  const [gridReady, setGridReady] = useState(false);
+  // Covers the grid while a chat "Analyze players" deep-link filter is being applied.
+  const [filteringAnalyzedPlayers, setFilteringAnalyzedPlayers] = useState(
+    () => searchParams.get('players') != null,
+  );
+  const [focusPlayerId, setFocusPlayerId] = useState<string | null>(null);
+
+  // Re-run the external (FA-only) filter whenever the toggle flips.
+  useEffect(() => {
+    apiRef.current?.onFilterChanged();
+  }, [faOnly]);
+
+  // The focused player pinned to the top row, so it stays visible while sorting/filtering
+  // (e.g. scan the FA list against your guy). Looked up across rostered + FA rows.
+  const pinnedTopRowData = useMemo<StatRow[] | undefined>(() => {
+    if (!focusPlayerId) return undefined;
+    const row = rows.find((r) => String(r.playerId) === focusPlayerId);
+    return row ? [row] : undefined;
+  }, [focusPlayerId, rows]);
+
+  // playerId -> { display name, which tab } across BOTH rostered tables and free agents, so a
+  // chat deep-link that mixes hitters and pitchers resolves every id (not just the active tab).
+  const identityById = useMemo(() => {
+    const map = new Map<string, { name: string; tab: Tab }>();
+    const add = (lines: PlayerStatLine[], t: Tab) => {
+      for (const line of lines) {
+        if (!map.has(line.player.playerId)) {
+          map.set(line.player.playerId, { name: line.player.fullName, tab: t });
+        }
+      }
+    };
+    add(data.batting.players, 'batting');
+    add(data.pitching.players, 'pitching');
+    const fa = faCache[range];
+    if (fa) {
+      add(fa.batting.players, 'batting');
+      add(fa.pitching.players, 'pitching');
+    }
+    return map;
+  }, [data, faCache, range]);
+
+  // Mentioned players from a chat deep-link (?players=), split by position and kept in the
+  // background so each tab holds its own filter - switching to Pitchers shows the mentioned
+  // pitchers instead of an empty grid.
+  const playersParam = searchParams.get('players');
+  const deepLinkNames = useMemo(() => {
+    if (!playersParam) return null;
+    const ids = playersParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const batting: string[] = [];
+    const pitching: string[] = [];
+    for (const id of ids) {
+      const hit = identityById.get(id);
+      if (!hit) continue;
+      (hit.tab === 'pitching' ? pitching : batting).push(hit.name);
+    }
+    return { ids, batting, pitching };
+  }, [playersParam, identityById]);
+
+  // Apply the deep-link once the grid is ready: open the tab that has mentioned players and
+  // filter it to them, and pin ?focus=. Waits one beat for free agents if some ids are still
+  // unresolved (they may be loading), so mixed FA/rostered links resolve fully.
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (playersParam) {
+      deepLinkApplied.current = false;
+      setFilteringAnalyzedPlayers(true);
+    } else {
+      setFilteringAnalyzedPlayers(false);
+    }
+  }, [playersParam]);
+
+  useEffect(() => {
+    if (deepLinkApplied.current || !gridReady) return;
+    const api = apiRef.current;
+    if (!api) return;
+    if (deepLinkNames) {
+      const faReady = faCache[range] !== undefined;
+      const resolved = deepLinkNames.batting.length + deepLinkNames.pitching.length;
+      if (resolved < deepLinkNames.ids.length && !faReady) return;
+      const startTab: Tab =
+        deepLinkNames.batting.length === 0 && deepLinkNames.pitching.length > 0
+          ? 'pitching'
+          : 'batting';
+      if (startTab !== tab) setTab(startTab);
+      api.setFilterModel({ ...api.getFilterModel(), fullName: deepLinkNames[startTab] });
+      requestAnimationFrame(() => setFilteringAnalyzedPlayers(false));
+    }
+    const focusParam = searchParams.get('focus');
+    if (focusParam && identityById.has(focusParam)) setFocusPlayerId(focusParam);
+    deepLinkApplied.current = true;
+  }, [gridReady, deepLinkNames, faCache, range, searchParams, identityById, tab]);
+
+  // After arriving from a chat deep-link, re-apply the active tab's mentioned players whenever
+  // the user switches tabs, so the per-position selection persists in the background.
+  useEffect(() => {
+    if (!deepLinkApplied.current || !deepLinkNames) return;
+    const api = apiRef.current;
+    if (!api) return;
+    api.setFilterModel({ ...api.getFilterModel(), fullName: deepLinkNames[tab] });
+  }, [tab, deepLinkNames]);
+
+  const handleRowClicked = (e: RowClickedEvent<StatRow>) => {
+    if (e.node.rowPinned) {
+      setFocusPlayerId(null); // click the pinned row to unpin
+      return;
+    }
+    const id = e.data?.playerId;
+    if (id != null) setFocusPlayerId((cur) => (cur === String(id) ? null : String(id)));
+  };
 
   // Friendly "Compare players" flow: filter the grid to the chosen players (via the Player
   // column's pick-em model); the always-on compare card then tracks them. No column controls.
@@ -222,7 +442,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     const api = apiRef.current;
     setShowCompareDialog(false);
     if (!api || ids.length === 0) return;
-    const byId = new Map(table.players.map((p) => [p.player.playerId, p]));
+    const byId = new Map(chartPlayers.map((p) => [p.player.playerId, p]));
     const names = ids
       .map((id) => byId.get(id)?.player.fullName)
       .filter((n): n is string => Boolean(n));
@@ -234,13 +454,17 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     );
   };
 
+  const isNarrow = useIsNarrow();
+
   const columnDefs = useMemo<ColDef<StatRow>[]>(() => {
+    const pinMeta = !isNarrow;
     const base: ColDef<StatRow>[] = [
       {
         headerName: 'Rank',
         field: 'overallRank',
         type: 'numericColumn',
-        width: 96,
+        width: 88,
+        ...(pinMeta ? { pinned: 'left' as const } : {}),
         headerTooltip: 'Overall season rank across the league player pool (lower is better)',
         cellRenderer: RankCell,
         comparator: rankComparator,
@@ -248,10 +472,32 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         filter: 'agNumberColumnFilter',
       },
       {
+        headerName: 'Value+',
+        field: 'sgptPlus',
+        type: 'numericColumn',
+        width: 96,
+        ...(pinMeta ? { pinned: 'left' as const } : {}),
+        headerTooltip:
+          'Value+: overall fantasy value from percentiles across the league scoring categories. 100 = league average, higher is better; the rank spans both hitters and pitchers.',
+        cellRenderer: SgptCell,
+        comparator: rankComparator,
+        filter: 'agNumberColumnFilter',
+      },
+      {
+        headerName: 'Pos',
+        field: 'position',
+        width: 88,
+        ...(pinMeta ? { pinned: 'left' as const } : {}),
+        headerTooltip: 'Eligible / display position (filter e.g. SP, RP, 2B)',
+        filter: PickemFilter,
+        filterParams: { tokenize: true },
+      },
+      {
         headerName: 'Player',
         field: 'fullName',
-        minWidth: 220,
+        minWidth: isNarrow ? 140 : 200,
         flex: 2,
+        pinned: 'left',
         cellRenderer: PlayerCell,
         tooltipField: 'fullName',
         filter: PickemFilter,
@@ -260,7 +506,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       {
         headerName: 'Team',
         field: 'owner',
-        minWidth: 160,
+        minWidth: isNarrow ? 120 : 160,
         flex: 1,
         cellRenderer: OwnerCell,
         filter: PickemFilter,
@@ -277,11 +523,16 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       filter: 'agNumberColumnFilter',
     }));
     return [...base, ...statCols];
-  }, [columns]);
+  }, [columns, isNarrow]);
 
   const defaultColDef = useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true, filterParams: GRID_FILTER_PARAMS }),
-    [],
+    () => ({
+      sortable: true,
+      filter: true,
+      resizable: !isNarrow,
+      filterParams: GRID_FILTER_PARAMS,
+    }),
+    [isNarrow],
   );
 
   // --- Charts: metric + a per-tab player series shared by both visualizations. ---
@@ -334,14 +585,14 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
 
   const activeIds = useMemo(() => tiles.filter((id) => !inactive.has(id)), [tiles, inactive]);
 
-  const presetIds = useMemo(() => topByRank(table.players, DEFAULT_SELECT_COUNT), [table.players]);
+  const presetIds = useMemo(() => topByRank(chartPlayers, DEFAULT_SELECT_COUNT), [chartPlayers]);
 
   // Seed the chart's player series from the grid's current top rows (the "compare" set)
   // and keep it in sync as the grid is sorted/filtered. Users can still tweak via the
   // picker below until the next grid-driven change. Ignore stale ids mid tab-switch.
   useEffect(() => {
     if (topRowIds.length === 0) return;
-    const valid = new Set(table.players.map((p) => p.player.playerId));
+    const valid = new Set(chartPlayers.map((p) => p.player.playerId));
     if (!topRowIds.every((id) => valid.has(id))) return;
     if (tab === 'batting') {
       setTilesBatting(topRowIds);
@@ -350,7 +601,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       setTilesPitching(topRowIds);
       setInactivePitching(new Set());
     }
-  }, [topRowIds, tab, table.players]);
+  }, [topRowIds, tab, chartPlayers]);
 
   // --- Selection actions (tile lifecycle + active/inactive toggling). ---
   const addTile = (id: string) => {
@@ -393,28 +644,30 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
 
   const playerOptions = useMemo<PlayerOption[]>(
     () =>
-      [...table.players]
+      [...chartPlayers]
         .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity))
         .map((p) => ({
           id: p.player.playerId,
           name: p.player.fullName,
           ...(p.player.mlbTeamAbbr ? { abbr: p.player.mlbTeamAbbr } : {}),
         })),
-    [table.players],
+    [chartPlayers],
   );
 
-  // Richer options (headshot + owner) for the friendly Compare players dialog.
-  const compareDialogOptions = useMemo<ComparePlayerOption[]>(
+  // Richer options (headshot + owner) for the friendly Compare players dialog. Free agents
+  // have no owner, so their card simply omits the subtitle.
+  const compareDialogOptions = useMemo<CompareEntityOption[]>(
     () =>
-      [...table.players]
+      [...chartPlayers]
         .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity))
         .map((p) => ({
           id: p.player.playerId,
           name: p.player.fullName,
-          ...(p.player.headshotUrl ? { headshotUrl: p.player.headshotUrl } : {}),
-          ...(p.owner ? { owner: p.owner } : {}),
+          kind: 'player' as const,
+          ...(p.player.headshotUrl ? { imageUrl: p.player.headshotUrl } : {}),
+          ...(p.owner ? { subtitle: p.owner } : {}),
         })),
-    [table.players],
+    [chartPlayers],
   );
 
   // Fantasy-team shortcuts: load one owner's players (rank-ordered, capped) as the series.
@@ -474,9 +727,9 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
   const selectedLines = useMemo(
     () =>
       activeIds
-        .map((id) => table.players.find((p) => p.player.playerId === id))
+        .map((id) => chartPlayers.find((p) => p.player.playerId === id))
         .filter((p): p is PlayerStatLine => Boolean(p)),
-    [activeIds, table.players],
+    [activeIds, chartPlayers],
   );
 
   const trendPlayers = useMemo(
@@ -503,9 +756,14 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       (entries) => {
         if (!entries.some((e) => e.isIntersecting) || trendRequested.current) return;
         trendRequested.current = true;
-        fetchPlayerTrendWindows(league.leagueId, cacheRef.current).then((merged) =>
+        fetchPlayerTrendWindows(league.leagueId, cacheRef.current, supportsLast14).then((merged) =>
           // Keep any ranges that loaded meanwhile; fill in the newly fetched windows.
           setCache((c) => ({ ...merged, ...c })),
+        );
+        // Free-agent windows in parallel, so free agents charted in the trend get a
+        // percentile per window (against the rostered pool). Fills in as it arrives.
+        fetchFreeAgentTrendWindows(league.leagueId, faCacheRef.current, supportsLast14).then(
+          (merged) => setFaCache((c) => ({ ...merged, ...c })),
         );
       },
       { rootMargin: '160px' },
@@ -514,11 +772,28 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
     return () => observer.disconnect();
   }, [league.leagueId]);
 
-  const trendReady = PLAYER_TREND_WINDOWS.every((w) => cache[w.range]);
+  const trendReady = playerTrendWindows(supportsLast14).every((w) => cache[w.range]);
   const trend = useMemo(
-    () => buildPlayerTrendSeries(cache, tab, effectiveMetric, activeIds, tab === 'pitching'),
-    [cache, tab, effectiveMetric, activeIds],
+    () =>
+      buildPlayerTrendSeries(
+        cache,
+        tab,
+        effectiveMetric,
+        activeIds,
+        tab === 'pitching',
+        faCache,
+        faOnly,
+      ),
+    [cache, tab, effectiveMetric, activeIds, faCache, faOnly],
   );
+
+  // How the Compare/Trend percentile pool reads in subtitles, matching the grid: rostered
+  // only by default, rostered + free agents while the "Free agents only" filter is on.
+  const poolDesc = `${faOnly || isAdvanced ? 'rostered + free-agent' : 'rostered'} ${
+    tab === 'batting' ? 'batters' : 'pitchers'
+  }`;
+  // Advanced stats are season-scoped, so its compare card always reads "Season".
+  const rangeText = isAdvanced ? 'Season' : rangeLabel(range);
 
   const jumpTo = (id: string) => (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
@@ -527,12 +802,13 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
 
   return (
     <section>
-      <ComparePlayersGuide />
-      <ComparePlayersDialog
+      <CompareGuide noun="player" seenKey="fcm.comparePlayersGuideSeen.v5" />
+      <CompareEntitiesDialog
         open={showCompareDialog}
         onClose={() => setShowCompareDialog(false)}
         options={compareDialogOptions}
         max={COMPARE_LIMIT}
+        noun="player"
         onCompare={runCompareForPlayers}
       />
       <div className={styles.page__header}>
@@ -578,18 +854,42 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             Pitchers
           </button>
         </div>
-        <div className={styles.rangeToggle} role="group" aria-label="Stat range">
-          {RANGES.map((r) => (
+        <div className={gridStyles.toolbarRight}>
+          <div className={styles.rangeToggle} role="group" aria-label="Stat category set">
             <button
-              key={r.value}
               type="button"
-              className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-              aria-pressed={r.value === range}
-              onClick={() => setRange(r.value)}
+              className={!isAdvanced ? styles.rangeButtonActive : styles.rangeButton}
+              aria-pressed={!isAdvanced}
+              onClick={() => setColumnSet('scoring')}
+              title="League scoring categories"
             >
-              {r.label}
+              Scoring
             </button>
-          ))}
+            <button
+              type="button"
+              className={isAdvanced ? styles.rangeButtonActive : styles.rangeButton}
+              aria-pressed={isAdvanced}
+              onClick={() => setColumnSet('advanced')}
+              title="MLB advanced / expected stats (xBA, xSLG, xwOBA, K%, K/9\u2026)"
+            >
+              Advanced
+            </button>
+          </div>
+          {!isAdvanced ? (
+            <div className={styles.rangeToggle} role="group" aria-label="Stat range">
+              {visibleRanges.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+                  aria-pressed={r.value === range}
+                  onClick={() => setRange(r.value)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -599,6 +899,15 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             {tab === 'batting' ? 'Batters' : 'Pitchers'}
           </h2>
           <StatsGridHelp />
+          <button
+            type="button"
+            className={`${gridStyles.faToggle}${faOnly ? ` ${gridStyles.faToggleActive}` : ''}`}
+            aria-pressed={faOnly}
+            onClick={() => setFaOnly((v) => !v)}
+            title="Show only unrostered free agents"
+          >
+            Free agents only
+          </button>
           <button
             type="button"
             className={gridStyles.comparePlayersBtn}
@@ -614,6 +923,15 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
           </button>
         </div>
         <div className={gridStyles.gridWrap}>
+          {filteringAnalyzedPlayers || advPending ? (
+            <div className={gridStyles.gridFilterOverlay} role="status" aria-live="polite">
+              <span className={chartStyles.spinner} aria-hidden="true" />
+              <span className={chartStyles.loadingVerb}>
+                {advPending ? 'Loading advanced stats' : 'Filtering to the analyzed players..'}
+                <span className={chartStyles.ellipsis} aria-hidden="true" />
+              </span>
+            </div>
+          ) : null}
           <AgGridReact<StatRow>
             theme={gridTheme}
             rowData={rows}
@@ -621,16 +939,24 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             defaultColDef={defaultColDef}
             context={context}
             getRowId={(p: GetRowIdParams<StatRow>) => String(p.data.playerId)}
+            pinnedTopRowData={pinnedTopRowData}
+            isExternalFilterPresent={() => faOnly}
+            doesExternalFilterPass={(node: IRowNode<StatRow>) => node.data?.owner == null}
+            onRowClicked={handleRowClicked}
             onGridReady={(e) => {
               apiRef.current = e.api;
+              setGridReady(true);
             }}
             onModelUpdated={syncTopRows}
+            rowHeight={isNarrow ? 44 : undefined}
             animateRows
             suppressCellFocus
             tooltipShowDelay={300}
-            overlayNoRowsTemplate={`<span class="ag-overlay-no-rows-center" style="color: var(--muted)">No ${
-              tab === 'batting' ? 'batters' : 'pitchers'
-            } on your roster.</span>`}
+            overlayNoRowsTemplate={`<span class="ag-overlay-no-rows-center" style="color: var(--muted)">${
+              advError
+                ? 'Couldn&apos;t load advanced stats.'
+                : `No ${tab === 'batting' ? 'batters' : 'pitchers'} on your roster.`
+            }</span>`}
           />
         </div>
       </div>
@@ -688,40 +1014,44 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             </div>
           </div>
 
-          <div className={chartStyles.controlGroup}>
-            <label className={chartStyles.controlGroupLabel} htmlFor="player-trend-metric">
-              Trend metric
-            </label>
-            <select
-              id="player-trend-metric"
-              className={styles.select}
-              value={effectiveMetric}
-              onChange={(e) => setSelectedMetric(e.target.value)}
-            >
-              {columns.map((col) => (
-                <option key={col.key} value={col.key}>
-                  {col.description ?? col.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className={chartStyles.controlGroup}>
-            <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
-            <div className={styles.rangeToggle} role="group" aria-label="Compare range">
-              {RANGES.map((r) => (
-                <button
-                  key={r.value}
-                  type="button"
-                  className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-                  aria-pressed={r.value === range}
-                  onClick={() => setRange(r.value)}
-                >
-                  {r.label}
-                </button>
-              ))}
+          {!isAdvanced ? (
+            <div className={chartStyles.controlGroup}>
+              <label className={chartStyles.controlGroupLabel} htmlFor="player-trend-metric">
+                Trend metric
+              </label>
+              <select
+                id="player-trend-metric"
+                className={styles.select}
+                value={effectiveMetric}
+                onChange={(e) => setSelectedMetric(e.target.value)}
+              >
+                {columns.map((col) => (
+                  <option key={col.key} value={col.key}>
+                    {col.description ?? col.label}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
+          ) : null}
+
+          {!isAdvanced ? (
+            <div className={chartStyles.controlGroup}>
+              <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
+              <div className={styles.rangeToggle} role="group" aria-label="Compare range">
+                {visibleRanges.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+                    aria-pressed={r.value === range}
+                    onClick={() => setRange(r.value)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className={chartStyles.controlGroup}>
             <span className={chartStyles.controlGroupLabel}>
@@ -730,7 +1060,8 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             {teamShortcuts.length > 0 && (
               <>
                 <p className={chartStyles.shortcutHint}>
-                  Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to compare
+                  Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to
+                  compare
                 </p>
                 <div
                   className={chartStyles.teamToggles}
@@ -789,8 +1120,8 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
                 Comparing {compareLines.length} {tab === 'batting' ? 'batters' : 'pitchers'}
               </h2>
               <p className={chartStyles.subtitle}>
-                Percentile among rostered {tab === 'batting' ? 'batters' : 'pitchers'} &middot;{' '}
-                {rangeLabel(range)} &middot; {compareColumns.length} of {columns.length} metrics
+                Percentile among {poolDesc} &middot; {rangeText} &middot; {compareColumns.length} of{' '}
+                {columns.length} metrics
               </p>
             </div>
           </div>
@@ -798,23 +1129,21 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             <p className={chartStyles.empty}>Pick at least one metric in chart controls.</p>
           ) : (
             <>
-              <PlayerMetricsGroupedChart
-                players={compareLines}
-                columns={compareColumns}
-                percentiles={percentiles}
-              />
-              <ComparePlayerTiles
-                players={compareLines}
+              <CompareMetricsPanel
+                entities={compareEntities}
                 columns={compareColumns}
                 percentiles={percentiles}
                 ranks={ranks}
+                exportTitle={`Comparing ${compareLines.length} ${tab === 'batting' ? 'batters' : 'pitchers'}`}
+                exportSubtitle={`Percentile among ${poolDesc} · ${rangeText} · ${compareColumns.length} of ${columns.length} metrics`}
+                exportFilename={`${tab}-compare`}
               />
             </>
           )}
         </section>
       ) : null}
 
-      {columns.length > 0 && (
+      {!isAdvanced && columns.length > 0 && (
         <div className={gridStyles.chartsSection} ref={chartsSectionRef}>
           <section
             id="trends"
@@ -831,8 +1160,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
                   <PlayerTrendHelp />
                 </div>
                 <p className={chartStyles.subtitle}>
-                  Percentile among rostered {tab === 'batting' ? 'batters' : 'pitchers'}; dashed line
-                  is each player&rsquo;s season baseline
+                  Percentile among {poolDesc}; dashed line is each player&rsquo;s season baseline
                 </p>
               </div>
             </div>
@@ -865,6 +1193,20 @@ function RankCell(params: CustomCellRendererProps) {
   return <span className={gridStyles.rankBadge}>{value}</span>;
 }
 
+/** Value+ cell: the value index as a badge, with the cross-position rank in the tooltip. */
+function SgptCell(params: CustomCellRendererProps) {
+  const value = params.value as number | null | undefined;
+  if (value == null) return <span className={gridStyles.rankEmpty}>-</span>;
+  const rank = (params.data as StatRow | undefined)?.sgptRank;
+  const title =
+    typeof rank === 'number' ? `Value+ ${value} - #${rank} overall (hitters + pitchers)` : `Value+ ${value}`;
+  return (
+    <span className={gridStyles.sgptBadge} title={title}>
+      {value}
+    </span>
+  );
+}
+
 /** Fantasy team cell: logo avatar + team name. */
 function OwnerCell(params: CustomCellRendererProps) {
   const owner = params.value as string | null | undefined;
@@ -882,13 +1224,22 @@ function OwnerCell(params: CustomCellRendererProps) {
 function PlayerCell(params: CustomCellRendererProps) {
   const data = params.data as StatRow;
   const fullName = String(data.fullName ?? '');
+  const playerId = String(data.playerId ?? '');
   const abbr = data.mlbTeamAbbr as string | null;
   const headshotUrl = data.headshotUrl as string | null;
   return (
     <span className={styles.playerCellInner}>
       <PlayerAvatar fullName={fullName} {...(headshotUrl ? { headshotUrl } : {})} />
       <span className={styles.playerName}>
-        {fullName}
+        <PlayerNameButton
+          stopPropagation
+          target={{
+            playerId,
+            fullName,
+            ...(abbr ? { mlbTeamAbbr: abbr } : {}),
+            ...(headshotUrl ? { headshotUrl } : {}),
+          }}
+        />
         {abbr ? <span className="muted"> ({abbr})</span> : null}
       </span>
     </span>
@@ -907,21 +1258,4 @@ function rankComparator(
   if (a == null) return isDescending ? -1 : 1;
   if (b == null) return isDescending ? 1 : -1;
   return a - b;
-}
-
-/** Parse a Yahoo stat value to a sortable number, or null when unavailable. */
-function toNumericValue(value: StatValue['value'] | undefined): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    if (value === '-' || value.trim() === '') return null;
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-  return null;
-}
-
-/** The raw text to display for a stat value ("-" is Yahoo's own missing placeholder). */
-function toDisplay(value: StatValue['value'] | undefined): string {
-  if (value === undefined) return '-';
-  return String(value);
 }

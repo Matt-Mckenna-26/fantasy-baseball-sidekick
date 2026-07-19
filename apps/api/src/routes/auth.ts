@@ -4,6 +4,7 @@ import type { AuthStatus } from '@fcm/contracts';
 import type { AppConfig } from '../config.js';
 import type { TokenStore, YahooTokens } from '../tokenStore.js';
 import { createYahooClient } from '../yahooClient.js';
+import { refreshYahooTokens } from '../tokenRefresh.js';
 import { asyncHandler, sendError } from '../http.js';
 
 /** Complete the OAuth code exchange, resolving the issued Yahoo tokens. */
@@ -16,33 +17,6 @@ function exchangeCode(config: AppConfig, req: Request): Promise<YahooTokens> {
         return;
       }
       resolve({ accessToken: data.access_token, refreshToken: data.refresh_token });
-    });
-  });
-}
-
-/**
- * Exchange a refresh token for a fresh access token.
- *
- * Workaround for a long-standing Yahoo bug: the access_token returned by the
- * authorization_code grant is frequently rejected by the Fantasy Sports API
- * (oauth_problem="token_rejected" / "additional_authorization_required"), even
- * though it works against the OIDC userinfo endpoint. Immediately performing a
- * refresh_token grant yields a token the Fantasy API accepts.
- */
-function refreshTokens(config: AppConfig, refreshToken: string): Promise<YahooTokens> {
-  const yf = createYahooClient(config);
-  yf.setRefreshToken(refreshToken);
-  return new Promise((resolve, reject) => {
-    yf.refreshToken((err, data) => {
-      if (err || !data?.access_token) {
-        reject(err ?? new Error('Yahoo did not return a refreshed token'));
-        return;
-      }
-      resolve({
-        accessToken: data.access_token,
-        // Yahoo may or may not rotate the refresh token; keep the prior one as a fallback.
-        refreshToken: data.refresh_token ?? refreshToken,
-      });
     });
   });
 }
@@ -105,8 +79,10 @@ export function createAuthRouter(config: AppConfig, tokenStore: TokenStore): Rou
 
       const tokens = await exchangeCode(config, req);
       // Immediately refresh: the code-grant access token is often rejected by the
-      // Fantasy API, so we persist the refreshed (working) token instead.
-      const workingTokens = await refreshTokens(config, tokens.refreshToken);
+      // Fantasy API (oauth_problem="token_rejected"/"additional_authorization_required"),
+      // so we persist the refreshed (working) token instead. The shared helper also
+      // records the token's expiry for the proactive refresh path.
+      const workingTokens = await refreshYahooTokens(config, tokens.refreshToken);
       await tokenStore.save(req.sessionID, workingTokens);
       req.session.yahooConnected = true;
       res.redirect(`${config.webAppUrl}/?connected=1`);

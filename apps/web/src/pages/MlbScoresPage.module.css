@@ -1,0 +1,246 @@
+.dateBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dateInput {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.dateNav {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dateNav:hover,
+.todayButton:hover {
+  border-color: var(--accent-hover);
+}
+
+.todayButton {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Responsive grid of game cards. */
+.gameList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.gameCard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* An expanded card spans the full row so its two box-score panels have room. */
+.gameCardActive {
+  grid-column: 1 / -1;
+}
+
+.gameCardMain {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gameCardMain:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.gameTeams {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scoreRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 96px;
+}
+
+.teamAbbr {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.teamScore {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.teamScoreWin {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.gameMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.statusLive {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.expandHint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.boxWrap {
+  border-top: 1px solid var(--border);
+  padding: 12px 14px 16px;
+}
+
+/* Home and away box scores side by side; each panel stacks its hitters grid above pitchers. */
+.boxPanels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.boxPanel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.boxPanelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.boxTeamName {
+  font-weight: 700;
+}
+
+.lineScore {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gridWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.stickyPlayer {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  min-width: 7.5rem;
+}
+
+thead .stickyPlayer {
+  z-index: 2;
+}
+
+.ownedRow .stickyPlayer {
+  /* Match .ownedRow tint so sticky cells don't flash the plain panel while scrolling. */
+  background: #221e3a;
+}
+
+.playerCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.decision {
+  color: var(--accent-hover);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+/* Subtle tint marking a row whose player is rostered by a league fantasy team. */
+.ownedRow td {
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.ownerBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 2px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--muted);
+  max-width: 150px;
+}
+
+/* Stronger accent when the owning team is the signed-in user's own team. */
+.ownerBadgeMine {
+  background: rgba(124, 58, 237, 0.22);
+  border-color: var(--accent-hover);
+  color: var(--text);
+}
+
+.ownerAvatar {
+  width: 16px;
+  height: 16px;
+  font-size: 0.6rem;
+}
+
+.ownerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .boxPanels {
+    grid-template-columns: 1fr;
+  }
+
+  .ownerBadge {
+    max-width: 110px;
+  }
+}

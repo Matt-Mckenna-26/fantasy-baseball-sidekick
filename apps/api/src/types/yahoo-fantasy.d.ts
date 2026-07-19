@@ -8,6 +8,8 @@ declare module 'yahoo-fantasy' {
   export interface YahooTokenData {
     access_token: string;
     refresh_token: string;
+    /** Access-token lifetime in seconds (Yahoo returns ~3600); used to compute expiry. */
+    expires_in?: number;
   }
 
   type TokenCallback = (data: YahooTokenData) => void | Promise<void>;

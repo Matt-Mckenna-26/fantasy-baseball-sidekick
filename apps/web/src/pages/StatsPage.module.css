@@ -1,9 +1,25 @@
 /* Stats v2 grid: container + custom cell styling layered over the ag-grid theme. */
 .gridWrap {
+  position: relative;
   height: min(96vh, 1197px);
   min-height: 559px;
   width: 100%;
   min-width: 0;
+}
+
+/* Shown while a chat "Analyze players" deep-link applies its pick-em filter to the grid. */
+.gridFilterOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  background: rgba(30, 41, 59, 0.72);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .gridWrap :global(.ag-root-wrapper) {
@@ -51,6 +67,20 @@
   padding: 0.1rem 0.4rem;
   border-radius: 6px;
   background: rgba(109, 40, 217, 0.25);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Value+ badge: distinct teal tint from the purple overall-rank badge. */
+.sgptBadge {
+  display: inline-block;
+  min-width: 2rem;
+  text-align: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(13, 148, 136, 0.28);
   color: var(--text);
   font-size: 0.8rem;
   font-weight: 600;
@@ -198,6 +228,15 @@
   margin-bottom: 0.75rem;
 }
 
+/* Groups the category-set (Scoring/Advanced) toggle with the range toggle on the toolbar's
+   right, wrapping together on narrow screens. */
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .tableCardTitleInRow {
   margin: 0;
 }
@@ -254,6 +293,31 @@
 .comparePlayersBtn svg {
   width: 0.85rem;
   height: 0.85rem;
+}
+
+/* Free-agent strict filter toggle: outline when off, accent-filled when on. */
+.faToggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.faToggle:hover {
+  color: var(--text);
+  border-color: var(--accent-hover);
+}
+
+.faToggleActive {
+  background: var(--accent);
+  border-color: var(--accent-hover);
+  color: #f8fafc;
 }
 
 /* Compare players dialog (search + player cards). Reuses .guideOverlay for the backdrop. */

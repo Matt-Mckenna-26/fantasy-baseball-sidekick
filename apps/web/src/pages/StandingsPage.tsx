@@ -5,12 +5,20 @@ import type {
   LeagueStandingsResponse,
   LeagueSummary,
   LeagueTeamStatsResponse,
+  LeagueTransaction,
+  LeagueTransactionsResponse,
   StandingsRow,
 } from '@fcm/contracts';
-import { getLeagueMatchups, getLeagueStandings, getLeagueTeamStats } from '../api/client';
+import {
+  getLeagueMatchups,
+  getLeagueStandings,
+  getLeagueTeamStats,
+  getLeagueTransactions,
+} from '../api/client';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
+import { PlayerNameButton } from '../components/PlayerNameButton';
 import { MatchupCarousel } from '../components/MatchupCarousel';
 import {
   computeLiveStandings,
@@ -100,6 +108,21 @@ function StandingsView({ data, league }: { data: LiveStandingsData; league: Leag
     [weekStats],
   );
 
+  // Recent transactions are supplemental context, so load them separately (silent)
+  // and let the log fill in progressively without blocking the standings render.
+  const [transactions, setTransactions] = useState<LeagueTransactionsResponse | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getLeagueTransactions(league.leagueId, { silent: true })
+      .then((res) => {
+        if (!cancelled) setTransactions(res);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [league.leagueId]);
+
   return (
     <section>
       <div className={tableStyles.page__header}>
@@ -137,8 +160,8 @@ function StandingsView({ data, league }: { data: LiveStandingsData; league: Leag
           <table className={tableStyles.table}>
             <thead>
               <tr>
-                <th className={tableStyles.num}>Rank</th>
-                <th>Team</th>
+                <th className={`${tableStyles.num} ${tableStyles.stickyCol}`}>Rank</th>
+                <th className={tableStyles.stickyColSecond}>Team</th>
                 <th className={tableStyles.num} title="Season record incl. the live week (W-L-T)">
                   Record
                 </th>
@@ -158,7 +181,101 @@ function StandingsView({ data, league }: { data: LiveStandingsData; league: Leag
         </div>
         {rows.length === 0 && <p className="muted">No standings available for this league.</p>}
       </div>
+
+      {transactions && transactions.transactions.length > 0 && (
+        <RecentTransactionsCard transactions={transactions.transactions} />
+      )}
     </section>
+  );
+}
+
+const TX_TYPE_LABEL: Record<LeagueTransaction['type'], string> = {
+  add: 'Add',
+  drop: 'Drop',
+  'add/drop': 'Add / Drop',
+  trade: 'Trade',
+};
+
+/** Format a Unix-seconds timestamp as a short "Jul 2" style date. */
+function formatTxDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/** The fantasy team(s) involved in a transaction, for the log's Team column. */
+function transactionTeams(tx: LeagueTransaction): string[] {
+  const teams = new Set<string>();
+  for (const p of tx.players) {
+    if (p.movement === 'trade') {
+      if (p.sourceTeamName) teams.add(p.sourceTeamName);
+      if (p.destinationTeamName) teams.add(p.destinationTeamName);
+    } else if (p.movement === 'add') {
+      if (p.destinationTeamName) teams.add(p.destinationTeamName);
+    } else if (p.sourceTeamName) {
+      teams.add(p.sourceTeamName);
+    }
+  }
+  return [...teams];
+}
+
+/** A log of the league's most recent add/drop/waiver/trade activity. */
+function RecentTransactionsCard({ transactions }: { transactions: LeagueTransaction[] }) {
+  return (
+    <div className={tableStyles.tableCard} style={{ marginTop: '1.25rem' }}>
+      <h2 className={tableStyles.tableCardTitle}>Recent transactions</h2>
+      <div className={tableStyles.tableScroll}>
+        <table className={tableStyles.table}>
+          <thead>
+            <tr>
+              <th className={tableStyles.stickyCol}>Date</th>
+              <th>Type</th>
+              <th>Team</th>
+              <th>Players</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.map((tx) => (
+              <tr key={tx.transactionId}>
+                <td className={`muted ${tableStyles.stickyCol}`}>{formatTxDate(tx.timestamp)}</td>
+                <td>
+                  <span className={styles.txBadge}>{TX_TYPE_LABEL[tx.type]}</span>
+                </td>
+                <td>{transactionTeams(tx).join(' ⇄ ') || '-'}</td>
+                <td>
+                  <div className={styles.txPlayers}>
+                    {tx.players.map((p, i) => (
+                      <span key={`${tx.transactionId}-${p.playerId}-${i}`} className={styles.txPlayer}>
+                        <span
+                          className={
+                            p.movement === 'drop' ? styles.txDrop : styles.txAdd
+                          }
+                          aria-hidden="true"
+                        >
+                          {p.movement === 'drop' ? '−' : p.movement === 'trade' ? '⇄' : '+'}
+                        </span>
+                        <span className={styles.txPlayerName}>
+                          <PlayerNameButton
+                            target={{
+                              playerId: p.playerId,
+                              fullName: p.fullName,
+                              ...(p.mlbTeamAbbr ? { mlbTeamAbbr: p.mlbTeamAbbr } : {}),
+                              ...(p.positionType ? { positionType: p.positionType } : {}),
+                            }}
+                          />
+                        </span>
+                        {p.mlbTeamAbbr && <span className="muted">{p.mlbTeamAbbr}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -307,10 +424,10 @@ function InlineTeam({ mover }: { mover: StandingsMover }) {
 function StandingsTableRow({ row }: { row: StandingsRow }) {
   return (
     <tr>
-      <td className={tableStyles.num}>
+      <td className={`${tableStyles.num} ${tableStyles.stickyCol}`}>
         {row.rank != null ? <span className={tableStyles.posBadge}>{row.rank}</span> : '-'}
       </td>
-      <td title={row.managerName ?? row.teamName}>
+      <td className={tableStyles.stickyColSecond} title={row.managerName ?? row.teamName}>
         <span className={tableStyles.playerCellInner}>
           <EntityAvatar label={row.teamName} {...(row.logoUrl ? { imageUrl: row.logoUrl } : {})} />
           <span className={tableStyles.playerName}>{row.teamName}</span>

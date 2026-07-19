@@ -137,7 +137,7 @@
   padding: 0 0.25rem;
 }
 
-/* Roster tables: fit every column in the viewport — no horizontal scroll. */
+/* Roster tables: fit every column in the viewport on desktop — no horizontal scroll. */
 .tableRosterWrap {
   overflow-x: visible;
   margin: 0;
@@ -169,6 +169,28 @@
 
 .tableRoster .playerCell {
   white-space: nowrap;
+}
+
+/* Shared sticky identity columns for HTML tables inside .tableScroll. */
+.stickyCol {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  min-width: 3rem;
+}
+
+.stickyColSecond {
+  position: sticky;
+  left: 3rem;
+  z-index: 1;
+  background: var(--panel);
+  min-width: 8rem;
+}
+
+thead .stickyCol,
+thead .stickyColSecond {
+  z-index: 2;
 }
 
 .playerName {
@@ -215,6 +237,59 @@
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
+}
+
+/* Manager name + stat window on one row (Rosters page). */
+.rosterToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 1rem;
+}
+
+.rosterToolbar .managerHeading {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rosterToolbar .rangeToggle {
+  margin-bottom: 0;
+  margin-left: auto;
+}
+
+/* Manager attribution under the roster header - a proper heading, not muted fine print. */
+.managerHeading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.5rem 0;
+}
+
+.managerHeadingText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.managerHeadingLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.managerHeadingName {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selectRow {
@@ -302,6 +377,62 @@
     padding: 0.65rem 0.4rem 0.5rem;
   }
 
+  /* Phones: H-scroll with sticky Pos/Player instead of squeeze-to-fit microtext. */
+  .tableRosterWrap {
+    overflow-x: auto;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tableRoster {
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
+    font-size: 0.85rem;
+  }
+
+  .tableRoster th,
+  .tableRoster td {
+    padding: 0.4rem 0.5rem;
+  }
+
+  .tableRoster thead th {
+    font-size: 0.72rem;
+  }
+
+  .tableRoster .posBadge {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.35rem;
+  }
+
+  .tableRoster .statusBadge {
+    font-size: 0.68rem;
+  }
+
+  .stickyPos,
+  .stickyPlayer {
+    position: sticky;
+    z-index: 2;
+    background: var(--panel);
+  }
+
+  .stickyPos {
+    left: 0;
+    min-width: 2.75rem;
+  }
+
+  .stickyPlayer {
+    left: 2.75rem;
+    min-width: 8.5rem;
+    max-width: 10.5rem;
+  }
+
+  thead .stickyPos,
+  thead .stickyPlayer {
+    z-index: 3;
+  }
+
   .page__header {
     flex-direction: column;
     align-items: stretch;
@@ -316,9 +447,14 @@
     text-align: center;
   }
 
-  .tabToolbar {
+  .tabToolbar,
+  .rosterToolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .rosterToolbar .rangeToggle {
+    margin-left: 0;
   }
 
   .tabToolbar .tabs {

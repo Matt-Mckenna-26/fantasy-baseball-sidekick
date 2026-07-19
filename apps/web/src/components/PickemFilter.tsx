@@ -6,10 +6,49 @@ import styles from '../pages/StatsPage.module.css';
 /** Selected values to show. `null` model = filter inactive (show all). */
 type PickemModel = string[];
 
+/** Preferred order for baseball position tokens in the Pos filter checklist. */
+const POSITION_ORDER = [
+  'C',
+  '1B',
+  '2B',
+  '3B',
+  'SS',
+  'OF',
+  'DH',
+  'Util',
+  'SP',
+  'RP',
+  'P',
+];
+
+/** Split a cell value into singular tokens ("2B,SS" -> ["2B","SS"]). */
+export function splitFilterTokens(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function compareTokens(a: string, b: string): number {
+  const ia = POSITION_ORDER.indexOf(a);
+  const ib = POSITION_ORDER.indexOf(b);
+  if (ia !== -1 || ib !== -1) {
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    if (ia !== ib) return ia - ib;
+  }
+  return a.localeCompare(b);
+}
+
 type PickemFilterProps = CustomFilterProps<Record<string, unknown>, unknown, PickemModel> & {
   /** Show a type-to-filter box above the list (for long value sets like players). */
   searchable?: boolean;
   searchPlaceholder?: string;
+  /**
+   * Split comma-joined cell values into singular checklist options (e.g. Pos "2B,SS"
+   * yields "2B" and "SS"), and pass a row when it contains ANY selected token.
+   */
+  tokenize?: boolean;
 };
 
 /**
@@ -17,7 +56,8 @@ type PickemFilterProps = CustomFilterProps<Record<string, unknown>, unknown, Pic
  * values in the column. Replaces the built-in filter on the Team/Player columns so
  * users can toggle which fantasy teams (or players) are visible. (The built-in Set
  * and Multi filters are Enterprise, so we implement the equivalent ourselves.) Long
- * value sets can opt into a search box via `searchable`.
+ * value sets can opt into a search box via `searchable`. Pos uses `tokenize` so the
+ * list is singular positions with contains-any matching.
  */
 export function PickemFilter({
   model,
@@ -26,6 +66,7 @@ export function PickemFilter({
   api,
   searchable = false,
   searchPlaceholder = 'Search…',
+  tokenize = false,
 }: PickemFilterProps) {
   const [values, setValues] = useState<string[]>([]);
   const [query, setQuery] = useState('');
@@ -34,7 +75,13 @@ export function PickemFilter({
     const found = new Set<string>();
     const add = (node: IRowNode<Record<string, unknown>>) => {
       const value = getValue(node);
-      if (value != null && String(value).trim() !== '') found.add(String(value));
+      if (value == null || String(value).trim() === '') return;
+      const raw = String(value);
+      if (tokenize) {
+        for (const token of splitFilterTokens(raw)) found.add(token);
+      } else {
+        found.add(raw);
+      }
     };
     // Respect the grid's other filters when building the list: with no selection yet,
     // only offer rows that pass those filters. Once this column has an active selection
@@ -45,8 +92,8 @@ export function PickemFilter({
     } else {
       api.forEachNode(add);
     }
-    setValues([...found].sort((a, b) => a.localeCompare(b)));
-  }, [api, getValue, model]);
+    setValues([...found].sort(tokenize ? compareTokens : (a, b) => a.localeCompare(b)));
+  }, [api, getValue, model, tokenize]);
 
   useEffect(() => {
     collectValues();
@@ -57,9 +104,14 @@ export function PickemFilter({
       // Empty selection = no filter (show everything). Only a non-empty allow-list filters.
       if (model == null || model.length === 0) return true;
       const value = getValue(node);
-      return value != null && model.includes(String(value));
+      if (value == null) return false;
+      if (tokenize) {
+        const tokens = splitFilterTokens(String(value));
+        return model.some((pick) => tokens.includes(pick));
+      }
+      return model.includes(String(value));
     },
-    [model, getValue],
+    [model, getValue, tokenize],
   );
 
   // Recompute the list whenever the menu opens so it tracks the current rows.

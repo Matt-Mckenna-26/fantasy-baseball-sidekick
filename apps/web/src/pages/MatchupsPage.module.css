@@ -228,13 +228,17 @@
     font-size: 0.68rem;
   }
 
+  .teamCol {
+    min-width: 5.75rem;
+  }
+
   .teamCell {
-    min-width: 6.5rem;
+    min-width: 5.75rem;
     gap: 0.35rem;
   }
 
   .teamCellName {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
   }
 
   .winnerCell {

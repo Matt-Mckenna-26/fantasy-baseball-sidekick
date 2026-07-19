@@ -34,6 +34,16 @@ export function isLowerBetter(label: string, isPitching: boolean): boolean {
   return isPitching ? PITCHING_LOWER_IS_BETTER.has(key) : BATTING_LOWER_IS_BETTER.has(key);
 }
 
+/**
+ * Whether a column's heat/rank scale must invert (lower value = hotter). Prefers the
+ * column's explicit `higherIsBetter` flag (set by advanced/expected columns whose
+ * direction can't be read from the label) and falls back to the label heuristic.
+ */
+function columnInverts(col: StatColumn, isPitching: boolean): boolean {
+  if (typeof col.higherIsBetter === 'boolean') return !col.higherIsBetter;
+  return isLowerBetter(col.label, isPitching);
+}
+
 /** First index whose value is >= target (count of values strictly less than target). */
 function lowerBound(sorted: number[], target: number): number {
   let lo = 0;
@@ -79,7 +89,7 @@ export function buildStatPercentiles(
     if (values.length === 0) continue;
     values.sort((a, b) => a - b);
     const n = values.length;
-    const invert = isLowerBetter(col.label, isPitching);
+    const invert = columnInverts(col, isPitching);
     lookup.set(col.key, (value: number) => {
       // Mid-rank percentile: (strictlyLess + 0.5 * equal) / n.
       const p = (lowerBound(values, value) + upperBound(values, value)) / 2 / n;
@@ -110,7 +120,7 @@ export function buildStatRanks(
     if (values.length === 0) continue;
     values.sort((a, b) => a - b);
     const n = values.length;
-    const invert = isLowerBetter(col.label, isPitching);
+    const invert = columnInverts(col, isPitching);
     lookup.set(col.key, (value: number) => {
       // Count players strictly better, so ties share a rank (competition ranking).
       const better = invert ? lowerBound(values, value) : n - upperBound(values, value);

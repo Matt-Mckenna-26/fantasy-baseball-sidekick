@@ -11,10 +11,13 @@ import type {
 } from '@fcm/contracts';
 import { isPitcherRosterSlot, normalizeTeamAbbr, playerGameKey } from '@fcm/contracts';
 import { getLeagueRosters, getMlbGames, getTeamRangeStats } from '../api/client';
+import { useSession } from '../context/SessionContext';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
+import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerNameButton } from '../components/PlayerNameButton';
 import { computeRosterTotals } from '../lib/rosterTotals';
 import styles from '../components/dataTable.module.css';
 
@@ -30,6 +33,7 @@ export function RostersPage() {
 const RANGES: { value: StatRange; label: string }[] = [
   { value: 'today', label: 'Today' },
   { value: 'last7', label: 'Last 7' },
+  { value: 'last14', label: 'Last 14' },
   { value: 'last30', label: 'Last 30' },
   { value: 'season', label: 'Season' },
 ];
@@ -53,6 +57,13 @@ function rosterRowClass(selectedPosition: string): string | undefined {
 }
 
 function RostersView({ data, league }: { data: LeagueRostersResponse; league: LeagueSummary }) {
+  const { session } = useSession();
+  // Last 14 is an MLB-source-only window; only offer it when the server advertises it.
+  const supportsLast14 = session.status === 'connected' && session.supportsLast14;
+  const visibleRanges = useMemo(
+    () => RANGES.filter((r) => r.value !== 'last14' || supportsLast14),
+    [supportsLast14],
+  );
   const [selectedTeamId, setSelectedTeamId] = useState(data.teams[0]?.teamId ?? '');
   const [range, setRange] = useState<StatRange>('today');
   const [stats, setStats] = useState<TeamStatsResponse | null>(null);
@@ -179,31 +190,34 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
         </label>
       </div>
 
-      <div className={styles.rangeToggle} role="group" aria-label="Stat range">
-        {RANGES.map((r) => (
-          <button
-            key={r.value}
-            type="button"
-            className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-            aria-pressed={r.value === range}
-            onClick={() => setRange(r.value)}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
-
-      {team.managerName && (
-        <p className="muted">
-          <span className={styles.entityLabel}>
+      <div className={styles.rosterToolbar}>
+        {team.managerName && (
+          <div className={styles.managerHeading}>
             <EntityAvatar
               label={team.managerName}
               {...(team.logoUrl ? { imageUrl: team.logoUrl } : {})}
             />
-            <span>Manager: {team.managerName}</span>
-          </span>
-        </p>
-      )}
+            <span className={styles.managerHeadingText}>
+              <span className={styles.managerHeadingLabel}>Manager</span>
+              <span className={styles.managerHeadingName}>{team.managerName}</span>
+            </span>
+          </div>
+        )}
+
+        <div className={styles.rangeToggle} role="group" aria-label="Stat range">
+          {visibleRanges.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+              aria-pressed={r.value === range}
+              onClick={() => setRange(r.value)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className={styles.tableStack}>
         <RosterTable
@@ -251,9 +265,12 @@ function RosterTable({
   gameByAbbr,
   isPitcherTable = false,
 }: RosterTableProps) {
+  const isNarrow = useIsNarrow();
+  // Hide the live Game ticker on phones so scoring cols stay readable via H-scroll.
+  const tickerVisible = showTicker && !isNarrow;
   const statShare = Math.max(columns.length, 1) * 6;
   const playerShare = 22;
-  const gameShare = showTicker ? 24 : 0;
+  const gameShare = tickerVisible ? 24 : 0;
   const fixedShare = 6 + 7 + gameShare + 10; // pos, mlb, status (+ game if shown)
   const totalShare = playerShare + statShare + fixedShare;
 
@@ -271,7 +288,7 @@ function RosterTable({
             <col style={{ width: `${(6 / totalShare) * 100}%` }} />
             <col style={{ width: `${(playerShare / totalShare) * 100}%` }} />
             <col style={{ width: `${(7 / totalShare) * 100}%` }} />
-            {showTicker && <col style={{ width: `${(gameShare / totalShare) * 100}%` }} />}
+            {tickerVisible && <col style={{ width: `${(gameShare / totalShare) * 100}%` }} />}
             {columns.map((col) => (
               <col key={col.key} style={{ width: `${(6 / totalShare) * 100}%` }} />
             ))}
@@ -279,10 +296,10 @@ function RosterTable({
           </colgroup>
           <thead>
             <tr>
-              <th>Pos</th>
-              <th>Player</th>
+              <th className={styles.stickyPos}>Pos</th>
+              <th className={styles.stickyPlayer}>Player</th>
               <th>MLB</th>
-              {showTicker && <th>Game</th>}
+              {tickerVisible && <th>Game</th>}
               {columns.map((col) => (
                 <th key={col.key} className={styles.num} title={col.description}>
                   {col.label}
@@ -299,20 +316,39 @@ function RosterTable({
               const rowClass = rosterRowClass(slot.selectedPosition);
               return (
                 <tr key={slot.player.playerId} className={rowClass}>
-                  <td>
+                  <td className={styles.stickyPos}>
                     <span className={styles.posBadge}>{slot.selectedPosition}</span>
                   </td>
-                  <td className={styles.playerCell} title={slot.player.fullName}>
+                  <td
+                    className={`${styles.playerCell} ${styles.stickyPlayer}`}
+                    title={slot.player.fullName}
+                  >
                     <span className={styles.playerCellInner}>
                       <PlayerAvatar
                         fullName={slot.player.fullName}
                         headshotUrl={slot.player.headshotUrl}
                       />
-                      <span className={styles.playerName}>{slot.player.fullName}</span>
+                      <span className={styles.playerName}>
+                        <PlayerNameButton
+                          target={{
+                            playerId: slot.player.playerId,
+                            fullName: slot.player.fullName,
+                            ...(slot.player.mlbTeamAbbr
+                              ? { mlbTeamAbbr: slot.player.mlbTeamAbbr }
+                              : {}),
+                            ...(slot.player.positionType
+                              ? { positionType: slot.player.positionType }
+                              : {}),
+                            ...(slot.player.headshotUrl
+                              ? { headshotUrl: slot.player.headshotUrl }
+                              : {}),
+                          }}
+                        />
+                      </span>
                     </span>
                   </td>
                   <td className="muted">{abbr ?? '-'}</td>
-                  {showTicker && (
+                  {tickerVisible && (
                     <td className={styles.gameCell}>
                       <span className={styles.gameCellInner}>
                         <GameDayBadge
@@ -349,11 +385,11 @@ function RosterTable({
           {slots.length > 0 && (
             <tfoot>
               <tr className={styles.totalsRow}>
-                <td colSpan={2} className={styles.totalsLabel}>
+                <td colSpan={2} className={`${styles.totalsLabel} ${styles.stickyPos}`}>
                   Total
                 </td>
                 <td />
-                {showTicker && <td />}
+                {tickerVisible && <td />}
                 {columns.map((col) => (
                   <td key={col.key} className={styles.num}>
                     {statsLoading ? '…' : totals.get(col.key)}

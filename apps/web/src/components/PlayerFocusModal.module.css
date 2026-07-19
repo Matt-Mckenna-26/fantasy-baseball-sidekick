@@ -1,0 +1,472 @@
+/* Non-blocking layer: cards float over the app so it stays interactive (open more cards,
+   no click-out dismiss). Only the cards themselves capture pointer events. */
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;
+}
+
+.card {
+  position: fixed;
+  pointer-events: auto;
+  width: min(64rem, calc(100vw - 2rem));
+  height: min(90vh, 42rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* Slim drag handle bar: grip + close only (no avatar/name - the card owns those). */
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+.topBar:active {
+  cursor: grabbing;
+}
+
+.dragGrip {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+}
+
+/* Compact-mode badge: segmented pill to swap the single visible panel. */
+.viewToggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-right: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.viewToggleBtn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.viewToggleBtn:hover {
+  color: var(--text);
+}
+
+.viewToggleBtnActive {
+  background: var(--accent, #38bdf8);
+  color: #0b1120;
+}
+
+/* Export the whole card (stat card + trend, minus News) to PNG. */
+.exportBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.exportBtn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent, #38bdf8);
+}
+
+.exportBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.exportIcon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.35rem;
+  border-radius: 6px;
+}
+
+.close:hover {
+  color: var(--text);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: 1.1rem 1.35rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* One obvious control cluster: metric series toggles + stat-card range, side by side. */
+.controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The two content panels (stats + news | trend) fill the remaining height. */
+.panels {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(19rem, 21rem) 1fr;
+  gap: 1.5rem;
+}
+
+/* Narrow card: one panel at a time, chosen by the top-bar view toggle. */
+.panelsCompact {
+  grid-template-columns: 1fr;
+}
+
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 0;
+  /* Season → advanced → news stack at natural height; scroll the whole column so
+     rank tiles never overlap when the card is short. Allow horizontal overflow so
+     wrapped metric/range chips are not clipped. */
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.rightCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 0;
+}
+
+/* Prominent player header (the requested emphasis): large headshot + big name. */
+.playerHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex: 0 0 auto;
+}
+
+.headerAvatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.headerAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+.headerInitials {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.playerHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.headerName {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.headerMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.headerOwner {
+  color: var(--muted);
+}
+
+.statusBadge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Value+ chip in the player header (overall fantasy value index). */
+.sgptBadge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid rgba(13, 148, 136, 0.4);
+  background: rgba(13, 148, 136, 0.16);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sgptBadgeRank {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Season / advanced / news: natural height, stacked; leftCol scrolls the stack. */
+.statSection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* CompareEntityTiles carries a Stats-page top margin; drop it in the card. */
+.statSection > div {
+  margin-top: 0;
+}
+
+.newsSection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chartArea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.newsList {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.newsItem {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.05);
+  padding: 0.6rem 0.75rem;
+}
+
+.newsItem:hover {
+  border-color: var(--accent, #38bdf8);
+}
+
+.newsLink {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.newsTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.newsSource {
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.newsEspn {
+  background: rgba(220, 38, 38, 0.16);
+  color: #f87171;
+}
+
+.newsMlb {
+  background: rgba(37, 99, 235, 0.16);
+  color: #60a5fa;
+}
+
+.newsType {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.newsDate {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.newsHeadline {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.newsDesc {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* Advanced / expected ("luck") stats: percentile-colored rank tiles (same component as the
+   scoring card), so the values echo the grid + chart coloring. */
+.advancedSection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* The shared CompareEntityTiles carries a Stats-page top margin; drop it in the card. */
+.advancedSection > div {
+  margin-top: 0;
+}
+
+/* Aero-snap target preview: a translucent ghost of where the card will park + autosize
+   when released, gliding between zones so the docking flow is obvious. */
+.snapPreview {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.14);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 9999px rgba(56, 189, 248, 0.06);
+  transition:
+    left 0.09s ease,
+    top 0.09s ease,
+    width 0.09s ease,
+    height 0.09s ease;
+}
+
+/* Bottom-right grip: drag to resize the card (multiple cards, each independently sized). */
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 2;
+  background: repeating-linear-gradient(-45deg, transparent 0 3px, var(--muted) 3px 4px);
+  opacity: 0.45;
+  border-bottom-right-radius: 14px;
+}
+
+.resizeHandle:hover {
+  opacity: 0.85;
+}
+
+/* Below the two-column breakpoint, the card is a fixed, centered sheet (drag/resize is
+   disabled in JS), so it can never be positioned off-screen by desktop coordinates. */
+@media (max-width: 46rem) {
+  .card {
+    left: 0.5rem;
+    right: 0.5rem;
+    top: max(0.5rem, env(safe-area-inset-top));
+    bottom: auto;
+    width: auto;
+    max-width: none;
+    height: min(calc(100dvh - 1rem), 52rem);
+    cursor: default;
+  }
+
+  .topBar {
+    cursor: default;
+  }
+
+  .body {
+    overflow-y: auto;
+  }
+
+  .panels {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    gap: 0.85rem 1rem;
+    padding: 0.55rem 0;
+  }
+
+  .chartArea {
+    min-height: 14rem;
+    max-height: 18rem;
+  }
+}

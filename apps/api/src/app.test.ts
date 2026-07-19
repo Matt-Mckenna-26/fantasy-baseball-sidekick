@@ -77,6 +77,30 @@ describe('API app', () => {
     expect(standings.body.error.code).toBe('unauthorized');
   });
 
+  it('transactions endpoint requires a connected session (401)', async () => {
+    const { app } = buildApp();
+    const res = await request(app).get('/api/me/leagues/24281/transactions');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
+  });
+
+  it('GET /api/mlb/games/:gamePk/boxscore returns a box score (public, mock mode)', async () => {
+    const { app } = buildApp();
+    const res = await request(app).get('/api/mlb/games/1/boxscore');
+    expect(res.status).toBe(200);
+    expect(res.body.gamePk).toBe(1);
+    expect(res.body.home.teamAbbr).toBe('NYY');
+    expect(res.body.home.batters.length).toBeGreaterThan(0);
+    expect(res.body.away.batters.length).toBeGreaterThan(0);
+  });
+
+  it('GET /api/mlb/games/:gamePk/boxscore rejects a non-numeric gamePk (400)', async () => {
+    const { app } = buildApp();
+    const res = await request(app).get('/api/mlb/games/abc/boxscore');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('bad_request');
+  });
+
   it('GET /auth/status reports not authenticated for a fresh session', async () => {
     const { app } = buildApp();
     const res = await request(app).get('/auth/status');

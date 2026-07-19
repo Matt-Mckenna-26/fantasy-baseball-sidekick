@@ -23,9 +23,11 @@ import {
   mapUserTeamsByLeague,
   parseLeaguePlayersStats,
   parseLeaguePlayerStatMap,
+  parseLeagueTransactions,
   parseTeamStats,
   YahooFantasyProvider,
 } from './fantasyProvider.js';
+import { MockFantasyProvider } from './fantasyProvider.mock.js';
 
 const config = {
   yahooClientId: 'id',
@@ -35,6 +37,8 @@ const config = {
   sessionSecret: 'x'.repeat(16),
   port: 8787,
   dataMode: 'live',
+  chatProvider: 'mock',
+  azureOpenAiApiVersion: '2024-10-21',
 } satisfies AppConfig;
 
 const sampleResult: YahooUserGameLeaguesResult = {
@@ -155,6 +159,96 @@ describe('YahooFantasyProvider.getMyLeagues', () => {
       logoUrl: 'https://example.com/team.png',
     });
     expect(dto.userGuid).toBe('GUID123');
+  });
+});
+
+describe('YahooFantasyProvider.getFreeAgents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const cats: YahooStatCategory[] = [
+    { stat_id: 7, name: 'Runs', display_name: 'R', position_type: 'B' },
+    { stat_id: 28, name: 'Wins', display_name: 'W', position_type: 'P' },
+  ];
+
+  /** A library-mapped free-agent player (no `owner`, since FA are unrostered). */
+  const fa = (key: string, name: string, positionType: 'B' | 'P'): YahooPlayer =>
+    ({
+      player_key: key,
+      player_id: key.split('.').pop(),
+      name: { full: name },
+      editorial_team_abbr: 'NYY',
+      position_type: positionType,
+      eligible_positions: positionType === 'P' ? ['SP'] : ['OF'],
+    }) as unknown as YahooPlayer;
+
+  it('fills batting and pitching independently via position=B/P and pages each pool', async () => {
+    const settings = vi.fn().mockResolvedValue({ settings: { stat_categories: cats } });
+    // One full page (25) of the requested type on start=0, empty on the next page, so
+    // both tables come back full even when the raw FA pool skews to one type.
+    const leagues = vi.fn().mockImplementation((_leagueId: string, filters: { position?: string; start?: number }) => {
+      if (filters.start !== 0) return Promise.resolve([{ players: [] }]);
+      const type = filters.position === 'P' ? 'P' : 'B';
+      const players = Array.from({ length: 25 }, (_, i) =>
+        fa(`431.p.${type}${i}`, `${type} Player ${i}`, type as 'B' | 'P'),
+      );
+      return Promise.resolve([{ players }]);
+    });
+    const api = vi.fn().mockResolvedValue({});
+
+    vi.mocked(createYahooClient).mockReturnValue({
+      setUserToken: vi.fn(),
+      setRefreshToken: vi.fn(),
+      league: { settings },
+      players: { leagues },
+      api,
+    } as unknown as ReturnType<typeof createYahooClient>);
+
+    const provider = new YahooFantasyProvider(config);
+    const dto = await provider.getFreeAgents({ accessToken: 'a', refreshToken: 'r' }, '431.l.111', {
+      range: 'season',
+    });
+
+    // Separate B and P pools were requested (not one mixed page), status=FA, paged.
+    const positionsRequested = leagues.mock.calls.map((c) => (c[1] as { position?: string }).position);
+    expect(new Set(positionsRequested)).toEqual(new Set(['B', 'P']));
+    expect(leagues.mock.calls.every((c) => (c[1] as { status?: string }).status === 'FA')).toBe(true);
+
+    // Both tables are full (25 each) - the bug was ~4 hitters from a single mixed page.
+    expect(dto.batting.players).toHaveLength(25);
+    expect(dto.pitching.players).toHaveLength(25);
+    // Free agents never carry an owner.
+    expect(dto.batting.players.every((p) => !('owner' in p))).toBe(true);
+  });
+
+  it('collapses to a single pool when a position is pinned', async () => {
+    const settings = vi.fn().mockResolvedValue({ settings: { stat_categories: cats } });
+    const leagues = vi
+      .fn()
+      .mockImplementation((_leagueId: string, filters: { start?: number }) =>
+        Promise.resolve([{ players: filters.start === 0 ? [fa('431.p.OF1', 'Some Outfielder', 'B')] : [] }]),
+      );
+    const api = vi.fn().mockResolvedValue({});
+
+    vi.mocked(createYahooClient).mockReturnValue({
+      setUserToken: vi.fn(),
+      setRefreshToken: vi.fn(),
+      league: { settings },
+      players: { leagues },
+      api,
+    } as unknown as ReturnType<typeof createYahooClient>);
+
+    const provider = new YahooFantasyProvider(config);
+    const dto = await provider.getFreeAgents({ accessToken: 'a', refreshToken: 'r' }, '431.l.111', {
+      range: 'season',
+      position: 'OF',
+    });
+
+    // Pinned position => the caller's filter is passed straight through (no B/P fan-out).
+    expect(leagues.mock.calls.every((c) => (c[1] as { position?: string }).position === 'OF')).toBe(true);
+    expect(dto.batting.players).toHaveLength(1);
+    expect(dto.pitching.players).toHaveLength(0);
   });
 });
 
@@ -716,6 +810,180 @@ describe('parseTeamStats', () => {
 
 // Standings path: map Yahoo's mapped league.standings teams to our DTO, by rank.
 // Shape mirrors node_modules/yahoo-fantasy/tests/nock-data/leagueStandings.js.
+describe('parseLeagueTransactions', () => {
+  const raw = {
+    fantasy_content: {
+      league: [
+        { league_key: '431.l.111' },
+        {
+          transactions: {
+            count: 4,
+            // Newest add/drop (out of timestamp order to prove we sort desc).
+            '0': {
+              transaction: [
+                { transaction_key: '431.l.111.tr.10', transaction_id: '10', type: 'add/drop', status: 'successful', timestamp: '1700000200' },
+                {
+                  players: {
+                    count: 2,
+                    '0': {
+                      player: [
+                        [
+                          { player_key: '431.p.1' },
+                          { player_id: '1' },
+                          { name: { full: 'Jon Lester' } },
+                          { editorial_team_abbr: 'chc' },
+                          { display_position: 'SP' },
+                          { position_type: 'P' },
+                        ],
+                        { transaction_data: [{ type: 'add', source_type: 'freeagents', destination_type: 'team', destination_team_key: '431.l.111.t.7', destination_team_name: 'TNTNT' }] },
+                      ],
+                    },
+                    '1': {
+                      player: [
+                        [
+                          { player_key: '431.p.2' },
+                          { player_id: '2' },
+                          { name: { full: 'Chris Young' } },
+                          { editorial_team_abbr: 'KC' },
+                          { display_position: 'SP' },
+                          { position_type: 'P' },
+                        ],
+                        { transaction_data: { type: 'drop', source_type: 'team', source_team_key: '431.l.111.t.7', source_team_name: 'TNTNT', destination_type: 'waivers' } },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+            // A trade (older timestamp, so it should sort after the add/drop).
+            '1': {
+              transaction: [
+                { transaction_key: '431.l.111.tr.9', transaction_id: '9', type: 'trade', status: 'successful', timestamp: '1700000100' },
+                {
+                  players: {
+                    count: 1,
+                    '0': {
+                      player: [
+                        [
+                          { player_key: '431.p.3' },
+                          { player_id: '3' },
+                          { name: { full: 'Dee Gordon' } },
+                          { editorial_team_abbr: 'Mia' },
+                          { display_position: '2B,SS' },
+                          { position_type: 'B' },
+                        ],
+                        { transaction_data: [{ type: 'trade', source_type: 'team', source_team_name: 'Jose Abreu', destination_type: 'team', destination_team_name: 'Bronx Bombers' }] },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+            // A commissioner move that must be filtered out entirely.
+            '2': {
+              transaction: [
+                { transaction_key: '431.l.111.tr.8', transaction_id: '8', type: 'commish', status: 'successful', timestamp: '1700000300' },
+                { players: { count: 0 } },
+              ],
+            },
+            // A plain add (oldest).
+            '3': {
+              transaction: [
+                { transaction_key: '431.l.111.tr.7', transaction_id: '7', type: 'add', status: 'successful', timestamp: '1700000050' },
+                {
+                  players: {
+                    count: 1,
+                    '0': {
+                      player: [
+                        [
+                          { player_key: '431.p.4' },
+                          { player_id: '4' },
+                          { name: { full: 'Vance Worley' } },
+                          { editorial_team_abbr: 'Pit' },
+                          { display_position: 'SP' },
+                          { position_type: 'P' },
+                        ],
+                        { transaction_data: [{ type: 'add', source_type: 'freeagents', destination_type: 'team', destination_team_name: 'The Beetle Bunch' }] },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  it('maps transactions newest-first, drops commish, and maps player movement + teams', () => {
+    const dto = parseLeagueTransactions(
+      raw as Parameters<typeof parseLeagueTransactions>[0],
+      '431.l.111',
+      25,
+    );
+    expect(dto.leagueId).toBe('431.l.111');
+    // commish is filtered out (4 raw -> 3 kept), sorted by timestamp desc.
+    expect(dto.transactions.map((t) => t.transactionId)).toEqual(['10', '9', '7']);
+
+    const addDrop = dto.transactions[0]!;
+    expect(addDrop.type).toBe('add/drop');
+    expect(addDrop.players).toEqual([
+      {
+        playerId: '1',
+        fullName: 'Jon Lester',
+        mlbTeamAbbr: 'CHC',
+        displayPosition: 'SP',
+        positionType: 'P',
+        movement: 'add',
+        destinationTeamName: 'TNTNT',
+      },
+      {
+        playerId: '2',
+        fullName: 'Chris Young',
+        mlbTeamAbbr: 'KC',
+        displayPosition: 'SP',
+        positionType: 'P',
+        movement: 'drop',
+        sourceTeamName: 'TNTNT',
+      },
+    ]);
+
+    const trade = dto.transactions[1]!;
+    expect(trade.type).toBe('trade');
+    expect(trade.players[0]).toMatchObject({
+      movement: 'trade',
+      sourceTeamName: 'Jose Abreu',
+      destinationTeamName: 'Bronx Bombers',
+    });
+  });
+
+  it('honours the limit after filtering', () => {
+    const dto = parseLeagueTransactions(
+      raw as Parameters<typeof parseLeagueTransactions>[0],
+      '431.l.111',
+      1,
+    );
+    expect(dto.transactions).toHaveLength(1);
+    expect(dto.transactions[0]!.transactionId).toBe('10');
+  });
+
+  it('returns an empty list when the collection is absent', () => {
+    expect(parseLeagueTransactions({}, 'l', 25)).toEqual({ leagueId: 'l', transactions: [] });
+  });
+});
+
+describe('MockFantasyProvider.getLeagueTransactions', () => {
+  it('returns schema-valid transactions capped to count, newest first', async () => {
+    const provider = new MockFantasyProvider();
+    const dto = await provider.getLeagueTransactions({ accessToken: 'a', refreshToken: 'r' }, 'l', 3);
+    expect(dto.transactions).toHaveLength(3);
+    const timestamps = dto.transactions.map((t) => t.timestamp);
+    expect([...timestamps]).toEqual([...timestamps].sort((a, b) => b - a));
+    expect(dto.transactions.some((t) => t.type === 'trade')).toBe(true);
+  });
+});
+
 describe('mapStandingsToDto', () => {
   it('maps rank, W/L/T, win %, games back, moves and orders by rank', () => {
     const teams: YahooTeam[] = [

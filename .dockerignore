@@ -1,0 +1,12 @@
+# Keep the build context small and never ship secrets or local build output into the image.
+# The image builds contracts/web/api fresh, so local dist + node_modules are excluded.
+**/node_modules
+**/dist
+.git
+.github
+certs
+.env
+.env.*
+!.env.example
+**/*.log
+.cursor

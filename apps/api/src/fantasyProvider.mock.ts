@@ -1,27 +1,37 @@
 import {
+  leagueFreeAgentsResponseSchema,
   leagueMatchupsResponseSchema,
   leagueRostersResponseSchema,
   leagueStandingsResponseSchema,
   leagueTeamStatsResponseSchema,
+  leagueTransactionsResponseSchema,
   meLeaguesResponseSchema,
+  mlbBoxScoreResponseSchema,
   mlbGamesResponseSchema,
   playerGameKey,
   playerStatsResponseSchema,
   teamStatsResponseSchema,
   teamWeekStatsResponseSchema,
+  type LeagueFreeAgentsResponse,
   type LeagueMatchupsResponse,
   type LeagueRostersResponse,
   type LeagueStandingsResponse,
   type LeagueTeamStatsResponse,
+  type LeagueTransactionsResponse,
   type MeLeaguesResponse,
+  type MlbBoxBatter,
+  type MlbBoxPitcher,
+  type MlbBoxScoreResponse,
+  type MlbBoxSide,
   type MlbGamesResponse,
+  type PlayerNewsResponse,
   type PlayerStatsResponse,
   type StatRange,
   type TeamStatBucket,
   type TeamStatsResponse,
   type TeamWeekStatsResponse,
 } from '@fcm/contracts';
-import type { FantasyProvider } from './fantasyProvider.js';
+import type { FantasyProvider, FreeAgentsQuery } from './fantasyProvider.js';
 import {
   TEAM_STAT_WINDOW_SIZE,
   aggregateWeeklyTeamStats,
@@ -335,6 +345,45 @@ const PITCHING_COLUMNS = [
   },
 ];
 
+/**
+ * Unrostered players for mock mode - deliberately NOT in any seeded roster, so the
+ * free-agent tool/filter returns a realistic waiver pool. Same row shapes as the
+ * rostered pools above. Sized like a real waiver wire (deep hitter + pitcher lists) so
+ * the Players tab "Free agents only" view mirrors the paged live provider rather than a
+ * handful of rows.
+ */
+const FA_BATTING_ROWS: BattingRow[] = [
+  [72, 'fa-b1', 'Nolan Schanuel', 'LAA', '1B/Util', '.281', 41, 9, 40, 3, '.772'],
+  [96, 'fa-b2', 'Tyler Fitzgerald', 'SF', '2B/SS/OF', '.259', 38, 11, 34, 14, '.735'],
+  [110, 'fa-b3', 'Jake Meyers', 'HOU', 'OF', '.274', 35, 5, 30, 12, '.719'],
+  [128, 'fa-b4', 'Ryan Jeffers', 'MIN', 'C', '.242', 29, 12, 37, 1, '.741'],
+  [140, 'fa-b5', 'Luisangel Acuna', 'NYM', '2B/SS', '.263', 33, 4, 24, 15, '.702'],
+  [158, 'fa-b6', 'Spencer Steer', 'CIN', '1B/3B/OF', '.248', 44, 14, 48, 8, '.728'],
+  [166, 'fa-b7', 'Michael Toglia', 'COL', '1B/Util', '.221', 40, 18, 45, 6, '.731'],
+  [175, 'fa-b8', 'Jose Caballero', 'TB', '2B/SS/OF', '.231', 37, 4, 22, 28, '.664'],
+  [182, 'fa-b9', 'Trevor Larnach', 'MIN', 'OF/Util', '.256', 34, 13, 41, 2, '.744'],
+  [190, 'fa-b10', 'LaMonte Wade Jr.', 'SF', '1B/OF', '.238', 39, 8, 29, 4, '.712'],
+  [201, 'fa-b11', 'Ramon Laureano', 'BAL', 'OF', '.264', 31, 12, 35, 5, '.766'],
+  [214, 'fa-b12', 'Nick Gonzales', 'PIT', '2B', '.253', 30, 7, 28, 6, '.700'],
+  [223, 'fa-b13', 'Jonah Bride', 'MIA', '1B/3B', '.259', 27, 9, 33, 1, '.735'],
+  [238, 'fa-b14', 'Tyler Stephenson', 'CIN', 'C', '.245', 28, 10, 34, 0, '.717'],
+  [252, 'fa-b15', 'Jacob Young', 'WSH', 'OF', '.271', 42, 2, 20, 24, '.678'],
+];
+
+const FA_PITCHING_ROWS: PitchingRow[] = [
+  [84, 'fa-p1', 'Ryan Pepiot', 'TB', 'SP/P', 7, 112, 0, '3.55', '1.12'],
+  [102, 'fa-p2', 'Mitch Keller', 'PIT', 'SP/P', 6, 104, 0, '3.78', '1.18'],
+  [126, 'fa-p3', 'Ryan Helsley', 'STL', 'RP/P', 3, 48, 19, '2.95', '1.09'],
+  [150, 'fa-p4', 'Jose Soriano', 'LAA', 'SP/P', 5, 98, 0, '3.90', '1.24'],
+  [162, 'fa-p5', 'Reese Olson', 'DET', 'SP/P', 6, 101, 0, '3.62', '1.15'],
+  [178, 'fa-p6', 'Andrew Abbott', 'CIN', 'SP/P', 7, 96, 0, '3.48', '1.17'],
+  [194, 'fa-p7', 'Jose Berrios', 'TOR', 'SP/P', 8, 110, 0, '4.05', '1.22'],
+  [206, 'fa-p8', 'Kris Bubic', 'KC', 'SP/P', 6, 108, 0, '3.40', '1.10'],
+  [219, 'fa-p9', 'Jeff Hoffman', 'TOR', 'RP/P', 4, 55, 17, '3.15', '1.08'],
+  [231, 'fa-p10', 'Robert Suarez', 'SD', 'RP/P', 2, 52, 21, '3.05', '1.13'],
+  [244, 'fa-p11', 'Porter Hodge', 'CHC', 'RP/P', 3, 50, 6, '3.25', '1.19'],
+];
+
 /* ---- range-stats + live-ticker mocks (parity with the live provider) ---- */
 
 /**
@@ -353,6 +402,8 @@ const COUNTING_KEYS = new Set(['R', 'HR', 'RBI', 'SB', 'W', 'K', 'SV']);
 const RANGE_FACTOR: Record<StatRange, number> = {
   season: 1,
   last30: 1 / 3,
+  last21: 1 / 4,
+  last14: 1 / 6,
   last7: 1 / 12,
   today: 1 / 80,
 };
@@ -554,6 +605,112 @@ export function getMockMlbGames(date: string): Promise<MlbGamesResponse> {
   return Promise.resolve(mlbGamesResponseSchema.parse({ date, games: MOCK_MLB_GAMES }));
 }
 
+/** Named batters for a mock box score side, so ownership highlighting has something to match. */
+const MOCK_BOX_BATTERS: Record<string, string[]> = {
+  NYY: ['Aaron Judge', 'Austin Wells', 'Ben Rice', 'Anthony Volpe', 'Jazz Chisholm Jr.'],
+  BOS: ['Rafael Devers', 'Jarren Duran', 'Trevor Story', 'Wilyer Abreu', 'Ceddanne Rafaela'],
+};
+
+function mockBatter(fullName: string, order: number): MlbBoxBatter {
+  const h = (order * 2) % 4;
+  return {
+    fullName,
+    position: order === 1 ? 'DH' : 'OF',
+    battingOrder: order,
+    ab: 4,
+    r: h > 0 ? 1 : 0,
+    h,
+    rbi: h,
+    hr: order === 1 && h > 1 ? 1 : 0,
+    bb: order % 3 === 0 ? 1 : 0,
+    so: order % 2,
+    avg: `.2${50 + order}`,
+  };
+}
+
+function mockPitcher(fullName: string, decision?: string): MlbBoxPitcher {
+  return {
+    fullName,
+    ...(decision ? { decision } : {}),
+    ip: decision === 'W' ? '6.0' : '1.0',
+    h: decision === 'W' ? 5 : 0,
+    r: decision === 'W' ? 2 : 0,
+    er: decision === 'W' ? 2 : 0,
+    bb: 1,
+    so: decision === 'W' ? 6 : 2,
+    hr: decision === 'W' ? 1 : 0,
+    era: '3.42',
+  };
+}
+
+function mockBoxSide(abbr: string, runs: number, decision?: string): MlbBoxSide {
+  const names = MOCK_BOX_BATTERS[abbr] ?? [
+    `${abbr} Leadoff`,
+    `${abbr} Two Hitter`,
+    `${abbr} Slugger`,
+    `${abbr} Cleanup`,
+    `${abbr} Utility`,
+  ];
+  const batters = names.map((n, i) => mockBatter(n, i + 1));
+  return {
+    teamAbbr: abbr,
+    teamName: abbr,
+    runs,
+    hits: batters.reduce((sum, b) => sum + b.h, 0),
+    errors: 0,
+    batters,
+    pitchers: [mockPitcher(`${abbr} Starter`, decision)],
+  };
+}
+
+/**
+ * Mock box score injected into the /api/mlb router in mock mode. Looks up the seeded game
+ * by gamePk to reuse its team abbreviations (so ownership highlighting works for NYY
+ * players in game 1), and falls back to a generic two-team line for unknown ids.
+ */
+export function getMockBoxScore(gamePk: number): Promise<MlbBoxScoreResponse> {
+  const game = MOCK_MLB_GAMES.find((g) => g.gamePk === gamePk);
+  const homeAbbr = game?.homeAbbr ?? 'NYY';
+  const awayAbbr = game?.awayAbbr ?? 'BOS';
+  const homeRuns = game?.homeScore ?? 3;
+  const awayRuns = game?.awayScore ?? 2;
+  return Promise.resolve(
+    mlbBoxScoreResponseSchema.parse({
+      gamePk,
+      home: mockBoxSide(homeAbbr, homeRuns, homeRuns >= awayRuns ? 'W' : undefined),
+      away: mockBoxSide(awayAbbr, awayRuns, awayRuns > homeRuns ? 'W' : 'SV'),
+    }),
+  );
+}
+
+/**
+ * Mock player-news source injected into the /api/mlb router in mock mode, so the
+ * player-focus modal renders offline without hitting the public ESPN/MLB APIs.
+ */
+export function getMockPlayerNews(name: string): Promise<PlayerNewsResponse> {
+  return Promise.resolve({
+    player: name,
+    matched: true,
+    items: [
+      {
+        id: 'mlb:mock:0',
+        source: 'mlb',
+        type: 'Status Change',
+        headline: `${name} activated from the 10-day injured list.`,
+        published: '2026-07-05',
+      },
+      {
+        id: 'espn:mock:1',
+        source: 'espn',
+        type: 'HeadlineNews',
+        headline: `${name} stays hot with a multi-hit night.`,
+        description: 'A mock article summary for local development.',
+        published: '2026-07-04T18:30:00Z',
+      },
+    ],
+  });
+}
+
 /** Which fantasy team rosters each player id, for the league-wide stats table. */
 const OWNER_BY_PLAYER_ID = new Map<string, string>(
   TEAMS.flatMap((t) => t.slots.map((s) => [s.player.playerId, t.teamName] as const)),
@@ -656,6 +813,149 @@ function standingsRowFor(index: number) {
     moves: 34 - index,
   };
 }
+
+/**
+ * A deterministic recent-transactions log for mock mode. Uses seeded team names and a
+ * mix of rostered/free-agent players so the Standings activity log and the AI tool have
+ * realistic add/drop/waiver/trade rows. Timestamps step back from the coverage date so
+ * they render newest-first. Validated by the schema, like every other mock payload.
+ */
+const MOCK_TX_BASE_TS = Math.floor(Date.parse(`${COVERAGE_DATE}T15:00:00Z`) / 1000);
+const HOUR = 3600;
+
+const MOCK_TRANSACTIONS: LeagueTransactionsResponse['transactions'] = [
+  {
+    transactionId: '5012',
+    type: 'add/drop',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 2 * HOUR,
+    players: [
+      {
+        playerId: 'fa-b1',
+        fullName: 'Nolan Schanuel',
+        mlbTeamAbbr: 'LAA',
+        displayPosition: '1B',
+        positionType: 'B',
+        movement: 'add',
+        destinationTeamName: 'Windy City Heat',
+      },
+      {
+        playerId: '213',
+        fullName: 'Nico Hoerner',
+        mlbTeamAbbr: 'CHC',
+        displayPosition: '2B,SS',
+        positionType: 'B',
+        movement: 'drop',
+        sourceTeamName: 'Windy City Heat',
+      },
+    ],
+  },
+  {
+    transactionId: '5011',
+    type: 'trade',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 20 * HOUR,
+    players: [
+      {
+        playerId: '113',
+        fullName: 'Ben Rice',
+        mlbTeamAbbr: 'NYY',
+        displayPosition: 'C,1B',
+        positionType: 'B',
+        movement: 'trade',
+        sourceTeamName: 'Bronx Bombers',
+        destinationTeamName: 'Sandlot Kings',
+      },
+      {
+        playerId: '313',
+        fullName: 'Michael Harris II',
+        mlbTeamAbbr: 'ATL',
+        displayPosition: 'OF',
+        positionType: 'B',
+        movement: 'trade',
+        sourceTeamName: 'Sandlot Kings',
+        destinationTeamName: 'Bronx Bombers',
+      },
+    ],
+  },
+  {
+    transactionId: '5010',
+    type: 'add',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 30 * HOUR,
+    players: [
+      {
+        playerId: 'fa-p1',
+        fullName: 'Ryan Pepiot',
+        mlbTeamAbbr: 'TB',
+        displayPosition: 'SP',
+        positionType: 'P',
+        movement: 'add',
+        destinationTeamName: 'Steel City Sluggers',
+      },
+    ],
+  },
+  {
+    transactionId: '5009',
+    type: 'drop',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 44 * HOUR,
+    players: [
+      {
+        playerId: '613',
+        fullName: 'Gleyber Torres',
+        mlbTeamAbbr: 'DET',
+        displayPosition: '2B',
+        positionType: 'B',
+        movement: 'drop',
+        sourceTeamName: 'Motor City Mashers',
+      },
+    ],
+  },
+  {
+    transactionId: '5008',
+    type: 'add/drop',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 60 * HOUR,
+    players: [
+      {
+        playerId: 'fa-b3',
+        fullName: 'Jake Meyers',
+        mlbTeamAbbr: 'HOU',
+        displayPosition: 'OF',
+        positionType: 'B',
+        movement: 'add',
+        destinationTeamName: 'Emerald City Sailors',
+      },
+      {
+        playerId: '813',
+        fullName: 'Andy Pages',
+        mlbTeamAbbr: 'LAD',
+        displayPosition: 'OF',
+        positionType: 'B',
+        movement: 'drop',
+        sourceTeamName: 'Emerald City Sailors',
+      },
+    ],
+  },
+  {
+    transactionId: '5007',
+    type: 'add',
+    status: 'successful',
+    timestamp: MOCK_TX_BASE_TS - 78 * HOUR,
+    players: [
+      {
+        playerId: 'fa-b2',
+        fullName: 'Tyler Fitzgerald',
+        mlbTeamAbbr: 'SF',
+        displayPosition: '2B,SS,OF',
+        positionType: 'B',
+        movement: 'add',
+        destinationTeamName: 'River City Rockets',
+      },
+    ],
+  },
+];
 
 export class MockFantasyProvider implements FantasyProvider {
   getMyLeagues(): Promise<MeLeaguesResponse> {
@@ -927,6 +1227,80 @@ export class MockFantasyProvider implements FantasyProvider {
     }
     return Promise.resolve(
       leagueMatchupsResponseSchema.parse({ leagueId, week: MOCK_CURRENT_WEEK, matchups }),
+    );
+  }
+
+  getFreeAgents(
+    _tokens: unknown,
+    leagueId: string,
+    query: FreeAgentsQuery,
+  ): Promise<LeagueFreeAgentsResponse> {
+    // `limit` caps players PER table (batting/pitching), matching the live provider; the
+    // default shows the full seeded pool for each.
+    const { range, position, limit = Math.max(FA_BATTING_ROWS.length, FA_PITCHING_ROWS.length) } =
+      query;
+    const factor = RANGE_FACTOR[range];
+    const scale = (key: string, value: string | number) =>
+      typeof value === 'number' && COUNTING_KEYS.has(key) ? Math.round(value * factor) : value;
+    const matchesPosition = (eligible: string) =>
+      !position || eligible.split('/').includes(position);
+
+    const battingPlayers = FA_BATTING_ROWS.filter(([, , , , eligible]) =>
+      matchesPosition(eligible),
+    ).map(([overallRank, playerId, fullName, mlbTeamAbbr, eligible, avg, r, hr, rbi, sb, ops]) => {
+      const rateParts = battingRateComponents(avg, ops, hr, factor);
+      return {
+        player: { playerId, fullName, mlbTeamAbbr, eligiblePositions: eligible.split('/') },
+        stats: [
+          { key: 'AVG', value: avg },
+          { key: 'R', value: scale('R', r) },
+          { key: 'HR', value: scale('HR', hr) },
+          { key: 'RBI', value: scale('RBI', rbi) },
+          { key: 'SB', value: scale('SB', sb) },
+          { key: 'OBP', value: rateParts.OBP },
+          { key: 'SLG', value: rateParts.SLG },
+          { key: 'OPS', value: ops },
+          { key: 'H/AB', value: rateParts['H/AB'] },
+        ],
+        overallRank,
+      };
+    });
+
+    const pitchingPlayers = FA_PITCHING_ROWS.filter(([, , , , eligible]) =>
+      matchesPosition(eligible),
+    ).map(([overallRank, playerId, fullName, mlbTeamAbbr, eligible, w, k, sv, era, whip]) => ({
+      player: { playerId, fullName, mlbTeamAbbr, eligiblePositions: eligible.split('/') },
+      stats: [
+        { key: 'W', value: scale('W', w) },
+        { key: 'K', value: scale('K', k) },
+        { key: 'SV', value: scale('SV', sv) },
+        { key: 'IP', value: pitchingIpFromWins(w, factor) },
+        { key: 'ERA', value: era },
+        { key: 'WHIP', value: whip },
+      ],
+      overallRank,
+    }));
+
+    return Promise.resolve(
+      leagueFreeAgentsResponseSchema.parse({
+        leagueId,
+        range,
+        batting: { columns: BATTING_COLUMNS, players: battingPlayers.slice(0, limit) },
+        pitching: { columns: PITCHING_COLUMNS, players: pitchingPlayers.slice(0, limit) },
+      }),
+    );
+  }
+
+  getLeagueTransactions(
+    _tokens: unknown,
+    leagueId: string,
+    count: number,
+  ): Promise<LeagueTransactionsResponse> {
+    return Promise.resolve(
+      leagueTransactionsResponseSchema.parse({
+        leagueId,
+        transactions: MOCK_TRANSACTIONS.slice(0, count),
+      }),
     );
   }
 }

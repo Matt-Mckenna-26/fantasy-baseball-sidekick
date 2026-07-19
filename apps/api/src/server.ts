@@ -1,6 +1,7 @@
 import { loadConfig } from './config.js';
 import { InMemoryTokenStore } from './tokenStore.js';
 import { FileTokenStore, FileSessionStore } from './devStore.js';
+import { parseEncryptionKey } from './tokenCrypto.js';
 import { createFantasyProvider } from './fantasyProvider.js';
 import { createApp } from './app.js';
 import { isYahooMalformedResponseCrash } from './yahooClient.js';
@@ -55,14 +56,24 @@ process.on('uncaughtException', (err) => {
 
 // Outside production, persist the session and tokens to disk so the frequent
 // `tsx watch` restarts don't wipe the login and force a re-auth on every edit.
+// The dev token store encrypts tokens at rest, so it needs the (stable) TOKEN_ENC_KEY.
 const isProd = process.env.NODE_ENV === 'production';
-const tokenStore = isProd ? new InMemoryTokenStore() : new FileTokenStore();
+function createDevTokenStore(): FileTokenStore {
+  if (!config.tokenEncKey) {
+    throw new Error(
+      'TOKEN_ENC_KEY is required for local token persistence. ' +
+        'Copy .env.example to .env and set a base64-encoded 32-byte key.',
+    );
+  }
+  return new FileTokenStore(parseEncryptionKey(config.tokenEncKey));
+}
+const tokenStore = isProd ? new InMemoryTokenStore() : createDevTokenStore();
 const sessionStore = isProd ? undefined : new FileSessionStore();
 const app = createApp(config, { tokenStore, provider, sessionStore });
 
 app.listen(config.port, () => {
   console.warn(
     `API listening on http://localhost:${config.port} (proxied via the Vite HTTPS dev server) ` +
-      `[data mode: ${config.dataMode}]`,
+      `[data mode: ${config.dataMode}, stats source: ${config.statsSource}]`,
   );
 });

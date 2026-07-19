@@ -6,6 +6,7 @@ import {
   apiErrorSchema,
   playerSchema,
   leagueRostersResponseSchema,
+  playerStatLineSchema,
   playerStatsResponseSchema,
   chatRequestSchema,
   chatResponseSchema,
@@ -14,6 +15,8 @@ import {
   leagueStandingsResponseSchema,
   leagueMatchupsResponseSchema,
   mlbGamesResponseSchema,
+  mlbBoxScoreResponseSchema,
+  playerAdvancedResponseSchema,
   playerGameKey,
   normalizePlayerName,
   isPitcherRosterSlot,
@@ -123,6 +126,25 @@ describe('contracts schemas', () => {
     expect(parsed.pitching.players[0]?.player.fullName).toBe('Tarik Skubal');
   });
 
+  it('parses a stat line carrying the Value+ index and cross-position rank', () => {
+    const parsed = playerStatLineSchema.parse({
+      player: { playerId: '10001', fullName: 'Aaron Judge', eligiblePositions: ['OF'] },
+      stats: [{ key: 'HR', value: 58 }],
+      overallRank: 1,
+      sgptPlus: 168,
+      sgptRank: 1,
+    });
+    expect(parsed.sgptPlus).toBe(168);
+    expect(parsed.sgptRank).toBe(1);
+    // Both fields are optional (a player outside the scored pool has neither).
+    const bare = playerStatLineSchema.parse({
+      player: { playerId: '2', fullName: 'X', eligiblePositions: ['OF'] },
+      stats: [],
+    });
+    expect(bare.sgptPlus).toBeUndefined();
+    expect(bare.sgptRank).toBeUndefined();
+  });
+
   it('parses a team range-stats response and rejects an invalid range', () => {
     const parsed = teamStatsResponseSchema.parse({
       leagueId: '431.l.111',
@@ -144,7 +166,7 @@ describe('contracts schemas', () => {
       teamStatsResponseSchema.parse({
         leagueId: '1',
         teamId: '3',
-        range: 'last14',
+        range: 'last45',
         battingColumns: [],
         pitchingColumns: [],
         players: [],
@@ -304,6 +326,127 @@ describe('contracts schemas', () => {
     });
     expect(parsed.games).toHaveLength(2);
     expect(parsed.games[0]?.inningState).toBe('Top');
+  });
+
+  it('parses an MLB box score response with batter and pitcher lines', () => {
+    const parsed = mlbBoxScoreResponseSchema.parse({
+      gamePk: 745804,
+      home: {
+        teamAbbr: 'KC',
+        teamName: 'Kansas City Royals',
+        runs: 5,
+        hits: 11,
+        errors: 0,
+        batters: [
+          {
+            fullName: 'Maikel Garcia',
+            position: '3B',
+            battingOrder: 1,
+            ab: 4,
+            r: 0,
+            h: 0,
+            rbi: 0,
+            hr: 0,
+            bb: 0,
+            so: 1,
+            avg: '.272',
+          },
+        ],
+        pitchers: [
+          {
+            fullName: 'Zack Greinke',
+            decision: 'W',
+            ip: '5.0',
+            h: 4,
+            r: 1,
+            er: 1,
+            bb: 2,
+            so: 2,
+            hr: 0,
+            era: '5.06',
+          },
+        ],
+      },
+      away: {
+        teamAbbr: 'DET',
+        teamName: 'Detroit Tigers',
+        runs: 1,
+        hits: 4,
+        errors: 1,
+        batters: [],
+        pitchers: [],
+      },
+    });
+    expect(parsed.home.batters[0]?.fullName).toBe('Maikel Garcia');
+    expect(parsed.home.pitchers[0]?.decision).toBe('W');
+    expect(parsed.away.errors).toBe(1);
+  });
+
+  it('rejects a box score batting order outside 1-9', () => {
+    expect(() =>
+      mlbBoxScoreResponseSchema.parse({
+        gamePk: 1,
+        home: {
+          teamAbbr: 'NYY',
+          teamName: 'New York Yankees',
+          runs: 0,
+          hits: 0,
+          errors: 0,
+          batters: [
+            { fullName: 'X', battingOrder: 10, ab: 0, r: 0, h: 0, rbi: 0, hr: 0, bb: 0, so: 0 },
+          ],
+          pitchers: [],
+        },
+        away: {
+          teamAbbr: 'BOS',
+          teamName: 'Boston Red Sox',
+          runs: 0,
+          hits: 0,
+          errors: 0,
+          batters: [],
+          pitchers: [],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('parses a player advanced-stats response and rejects a bad metric format', () => {
+    const parsed = playerAdvancedResponseSchema.parse({
+      query: 'Aaron Judge',
+      matched: true,
+      player: 'Aaron Judge',
+      team: 'NYY',
+      group: 'hitting',
+      season: 2026,
+      metrics: [
+        {
+          key: 'avg',
+          label: 'AVG',
+          actual: 0.331,
+          expected: 0.314,
+          format: 'rate3',
+          higherIsBetter: true,
+        },
+        { key: 'babip', label: 'BABIP', actual: 0.376, format: 'rate3', higherIsBetter: true },
+      ],
+      luck: { lean: 'sell', summary: 'Outproducing the expected numbers.' },
+    });
+    expect(parsed.metrics[0]?.expected).toBe(0.314);
+    expect(parsed.metrics[1]?.expected).toBeUndefined();
+    expect(parsed.luck?.lean).toBe('sell');
+
+    // matched:false with an empty metric list is valid (unresolved player).
+    expect(
+      playerAdvancedResponseSchema.parse({ query: 'x', matched: false, metrics: [] }).matched,
+    ).toBe(false);
+
+    expect(() =>
+      playerAdvancedResponseSchema.parse({
+        query: 'x',
+        matched: true,
+        metrics: [{ key: 'k', label: 'K', format: 'percent', higherIsBetter: false }],
+      }),
+    ).toThrow();
   });
 
   it('parses a chat request and response, rejecting empty message lists', () => {

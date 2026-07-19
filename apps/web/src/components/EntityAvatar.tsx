@@ -14,10 +14,14 @@ export function EntityAvatar({
   label,
   imageUrl,
   className,
+  imgLoading = 'lazy',
+  imgCrossOrigin,
 }: {
   label: string;
   imageUrl?: string;
   className?: string;
+  imgLoading?: 'lazy' | 'eager';
+  imgCrossOrigin?: '' | 'anonymous' | 'use-credentials';
 }) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(imageUrl) && !failed;
@@ -32,8 +36,9 @@ export function EntityAvatar({
           className={styles.entityAvatarImg}
           src={imageUrl}
           alt=""
-          loading="lazy"
+          loading={imgLoading}
           decoding="async"
+          {...(imgCrossOrigin ? { crossOrigin: imgCrossOrigin } : {})}
           onError={() => setFailed(true)}
         />
       ) : (

@@ -1,14 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import session, { type SessionData } from 'express-session';
 import { API_DIR } from './config.js';
+import { decrypt, encrypt } from './tokenCrypto.js';
 import type { TokenStore, YahooTokens } from './tokenStore.js';
 
 /**
  * Local-dev persistence backed by JSON files. Its sole purpose is to survive the
  * frequent process restarts from `tsx watch`, so a code change no longer forces a
- * re-login. NOT for production: tokens are stored unencrypted on disk (the
- * plan-of-record moves these to Cosmos + Key Vault). The directory is gitignored.
+ * re-login. Tokens are encrypted at rest (AES-256-GCM via tokenCrypto) so the
+ * gitignored dev-state file never holds Yahoo tokens in plaintext. The same
+ * {@link TokenStore} seam is where the deferred Cosmos + Key Vault backend drops in
+ * for production (no call-site changes).
  */
 const STATE_DIR = resolve(API_DIR, '.dev-state');
 
@@ -23,21 +26,42 @@ function readJson<T>(file: string, fallback: T): T {
 }
 
 function writeJson(file: string, value: unknown): void {
-  mkdirSync(STATE_DIR, { recursive: true });
+  mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(value), 'utf8');
 }
 
-/** File-backed {@link TokenStore} for local dev only. */
+/**
+ * File-backed {@link TokenStore} for local dev only. Each session's tokens are
+ * encrypted individually; the on-disk file maps sessionId -> encrypted payload.
+ */
 export class FileTokenStore implements TokenStore {
-  private readonly file = resolve(STATE_DIR, 'tokens.json');
+  private readonly file: string;
   private readonly store: Map<string, YahooTokens>;
 
-  constructor() {
-    this.store = new Map(Object.entries(readJson<Record<string, YahooTokens>>(this.file, {})));
+  constructor(
+    private readonly key: Buffer,
+    file: string = resolve(STATE_DIR, 'tokens.json'),
+  ) {
+    this.file = file;
+    this.store = new Map();
+    const persisted = readJson<Record<string, string>>(this.file, {});
+    for (const [sessionId, payload] of Object.entries(persisted)) {
+      try {
+        this.store.set(sessionId, JSON.parse(decrypt(payload, key)) as YahooTokens);
+      } catch {
+        // Legacy plaintext or a payload written with a different key can't be read;
+        // drop it (that session simply re-logs in). Never log token material.
+        console.warn(`[dev-state] dropping unreadable token entry for one session`);
+      }
+    }
   }
 
   private persist(): void {
-    writeJson(this.file, Object.fromEntries(this.store));
+    const encrypted: Record<string, string> = {};
+    for (const [sessionId, tokens] of this.store) {
+      encrypted[sessionId] = encrypt(JSON.stringify(tokens), this.key);
+    }
+    writeJson(this.file, encrypted);
   }
 
   async get(sessionId: string): Promise<YahooTokens | undefined> {

@@ -11,6 +11,7 @@ import type { LeagueSummary } from '@fcm/contracts';
 import { getAuthStatus, getMyLeagues, isUnauthorizedError, logout as apiLogout } from '../api/client';
 import { getSelectedLeagueId, setSelectedLeagueId } from '../lib/selectedLeague';
 import { onUnauthorized } from '../lib/unauthorized';
+import { clearStatsCache } from '../lib/statsCache';
 
 export type SessionState =
   | { status: 'loading' }
@@ -20,6 +21,8 @@ export type SessionState =
       userGuid?: string;
       leagues: LeagueSummary[];
       selectedLeague: LeagueSummary | null;
+      /** Server can serve the MLB-only Last 14 stat window (STATS_SOURCE=mlb). */
+      supportsLast14: boolean;
     };
 
 type SessionContextValue = {
@@ -41,6 +44,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const markSessionExpired = useCallback(() => {
     setSession({ status: 'disconnected', sessionExpired: true });
+    clearStatsCache();
     void apiLogout().catch(() => {
       // Session is already invalid server-side; clearing locally is enough.
     });
@@ -70,6 +74,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           userGuid: data.userGuid,
           leagues: data.leagues,
           selectedLeague,
+          supportsLast14: data.supportsLast14 ?? false,
         });
       } catch (err) {
         if (isUnauthorizedError(err)) {
@@ -79,6 +84,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             status: 'connected',
             leagues: [],
             selectedLeague: null,
+            supportsLast14: false,
           });
         }
       }
@@ -102,6 +108,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await apiLogout();
+    clearStatsCache();
     setSession({ status: 'disconnected' });
   }, []);
 

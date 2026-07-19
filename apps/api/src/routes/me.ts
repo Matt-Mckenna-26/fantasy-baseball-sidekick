@@ -1,17 +1,29 @@
 import { Router, type Request, type Response } from 'express';
 import { statRangeSchema, teamStatBucketSchema } from '@fcm/contracts';
+import type { AppConfig } from '../config.js';
 import type { FantasyProvider } from '../fantasyProvider.js';
 import type { TokenStore, YahooTokens } from '../tokenStore.js';
+import { ensureFreshTokens } from '../tokenRefresh.js';
 import { asyncHandler, sendError } from '../http.js';
 import { isLeagueAllowed } from '../closedBeta.js';
+import { buildLeagueAdvancedStats } from '../leagueAdvancedStats.js';
+import { withSgptRank } from '../sgptRank.js';
 
 /** Authenticated, read-only endpoints scoped to the signed-in Yahoo user. */
-export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider): Router {
+export function createMeRouter(
+  config: AppConfig,
+  tokenStore: TokenStore,
+  provider: FantasyProvider,
+): Router {
   const router = Router();
 
-  /** Resolve the session's Yahoo tokens, or send a 401 and return undefined. */
+  /**
+   * Resolve the session's Yahoo tokens, proactively refreshing them if they are near
+   * expiry (so the provider's parallel calls start with a valid token), or send a 401
+   * and return undefined. A failed refresh propagates as an auth error to the handler.
+   */
   async function requireTokens(req: Request, res: Response): Promise<YahooTokens | undefined> {
-    const tokens = await tokenStore.get(req.sessionID);
+    const tokens = await ensureFreshTokens({ sessionId: req.sessionID, store: tokenStore, config });
     if (!tokens) {
       sendError(res, 401, 'unauthorized', 'Connect your Yahoo account first.');
       return undefined;
@@ -53,6 +65,8 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
       );
       res.json({
         ...leagues,
+        // Advertise the MLB-only Last 14 window so the UI can show/hide that control.
+        supportsLast14: config.statsSource === 'mlb',
         leagues: leagues.leagues.map((league) => ({
           ...league,
           allowed: isLeagueAllowed(league.leagueId),
@@ -76,8 +90,9 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
     }),
   );
 
-  // Player stat table for a league over a window (?range=today|last7|last30|season,
-  // default season). Auth + allowlist enforced; data source depends on mode.
+  // Player stat table for a league over a window (?range=today|last7|last14|last21|
+  // last30|season, default season; last14/last21 require STATS_SOURCE=mlb). Auth +
+  // allowlist enforced.
   router.get(
     '/leagues/:leagueId/stats',
     asyncHandler(async (req, res) => {
@@ -87,13 +102,101 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
       if (!leagueId) return;
       const parsedRange = statRangeSchema.safeParse(req.query.range ?? 'season');
       if (!parsedRange.success) {
-        sendError(res, 400, 'bad_request', 'range must be one of: today, last7, last30, season.');
+        sendError(
+          res,
+          400,
+          'bad_request',
+          'range must be one of: today, last7, last14, last21, last30, season.',
+        );
+        return;
+      }
+      if (
+        (parsedRange.data === 'last14' || parsedRange.data === 'last21') &&
+        config.statsSource !== 'mlb'
+      ) {
+        sendError(
+          res,
+          400,
+          'bad_request',
+          `The ${parsedRange.data} window requires the MLB stats source.`,
+        );
         return;
       }
       const stats = await provider.getPlayerStats(tokens, leagueId, parsedRange.data, (refreshed) =>
         tokenStore.save(req.sessionID, refreshed),
       );
+      // Attach Value+ scores (100 = league average, ranked across hitters + pitchers)
+      // here so the UI grid and the AI co-manager share the exact same numbers.
+      res.json(withSgptRank(stats));
+    }),
+  );
+
+  // League-wide ADVANCED/expected ("luck") stats, shaped like /stats so the grid, compare
+  // card, and player-focus tiles reuse the same percentile pipeline. Season-only (MLB exposes
+  // expected splits per season); cached per league server-side. Auth + allowlist enforced.
+  router.get(
+    '/leagues/:leagueId/advanced-stats',
+    asyncHandler(async (req, res) => {
+      const tokens = await requireTokens(req, res);
+      if (!tokens) return;
+      const leagueId = requireAllowedLeague(req, res);
+      if (!leagueId) return;
+      const stats = await buildLeagueAdvancedStats(provider, tokens, leagueId, (refreshed) =>
+        tokenStore.save(req.sessionID, refreshed),
+      );
       res.json(stats);
+    }),
+  );
+
+  // Unrostered (or waiver-available) players for a league over a window
+  // (?range=today|last7|last14|last21|last30|season, default season; last14/last21
+  // require STATS_SOURCE=mlb; ?position=SP; ?availability=FA|A; ?limit=25). Auth + allowlist.
+  router.get(
+    '/leagues/:leagueId/free-agents',
+    asyncHandler(async (req, res) => {
+      const tokens = await requireTokens(req, res);
+      if (!tokens) return;
+      const leagueId = requireAllowedLeague(req, res);
+      if (!leagueId) return;
+      const parsedRange = statRangeSchema.safeParse(req.query.range ?? 'season');
+      if (!parsedRange.success) {
+        sendError(
+          res,
+          400,
+          'bad_request',
+          'range must be one of: today, last7, last14, last21, last30, season.',
+        );
+        return;
+      }
+      if (
+        (parsedRange.data === 'last14' || parsedRange.data === 'last21') &&
+        config.statsSource !== 'mlb'
+      ) {
+        sendError(
+          res,
+          400,
+          'bad_request',
+          `The ${parsedRange.data} window requires the MLB stats source.`,
+        );
+        return;
+      }
+      const availability = req.query.availability === 'A' ? 'A' : 'FA';
+      const position = typeof req.query.position === 'string' ? req.query.position : undefined;
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const limit =
+        Number.isFinite(limitRaw) && (limitRaw as number) > 0 ? (limitRaw as number) : undefined;
+      const freeAgents = await provider.getFreeAgents(
+        tokens,
+        leagueId,
+        {
+          range: parsedRange.data,
+          availability,
+          ...(position ? { position } : {}),
+          ...(limit ? { limit } : {}),
+        },
+        (refreshed) => tokenStore.save(req.sessionID, refreshed),
+      );
+      res.json(freeAgents);
     }),
   );
 
@@ -151,6 +254,30 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
     }),
   );
 
+  // Recent league transactions (adds, drops/waivers, trades), newest first
+  // (?count=<n>, default 25, clamped to 50). Auth + allowlist enforced.
+  router.get(
+    '/leagues/:leagueId/transactions',
+    asyncHandler(async (req, res) => {
+      const tokens = await requireTokens(req, res);
+      if (!tokens) return;
+      const leagueId = requireAllowedLeague(req, res);
+      if (!leagueId) return;
+      const countRaw = typeof req.query.count === 'string' ? Number(req.query.count) : undefined;
+      const count =
+        Number.isFinite(countRaw) && (countRaw as number) > 0
+          ? Math.min(Math.trunc(countRaw as number), 50)
+          : 25;
+      const transactions = await provider.getLeagueTransactions(
+        tokens,
+        leagueId,
+        count,
+        (refreshed) => tokenStore.save(req.sessionID, refreshed),
+      );
+      res.json(transactions);
+    }),
+  );
+
   // Head-to-head matchups for the league's current fantasy week (empty for roto
   // leagues with no scoreboard). Auth + allowlist enforced.
   router.get(
@@ -168,7 +295,8 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
   );
 
   // One team's players with their scoring-category values over a window
-  // (?range=today|last7|last30|season, default season). Auth + allowlist enforced.
+  // (?range=today|last7|last14|last21|last30|season, default season; last14/last21
+  // require STATS_SOURCE=mlb). Auth + allowlist enforced.
   router.get(
     '/leagues/:leagueId/teams/:teamId/stats',
     asyncHandler(async (req, res) => {
@@ -180,7 +308,24 @@ export function createMeRouter(tokenStore: TokenStore, provider: FantasyProvider
       if (!teamId) return;
       const parsedRange = statRangeSchema.safeParse(req.query.range ?? 'season');
       if (!parsedRange.success) {
-        sendError(res, 400, 'bad_request', 'range must be one of: today, last7, last30, season.');
+        sendError(
+          res,
+          400,
+          'bad_request',
+          'range must be one of: today, last7, last14, last21, last30, season.',
+        );
+        return;
+      }
+      if (
+        (parsedRange.data === 'last14' || parsedRange.data === 'last21') &&
+        config.statsSource !== 'mlb'
+      ) {
+        sendError(
+          res,
+          400,
+          'bad_request',
+          `The ${parsedRange.data} window requires the MLB stats source.`,
+        );
         return;
       }
       const stats = await provider.getTeamRangeStats(

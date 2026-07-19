@@ -46,6 +46,7 @@ function ShellBrand() {
 const authedNavItems = [
   { to: '/chat', label: 'TheShowGPT' },
   { to: '/rosters', label: 'Rosters' },
+  { to: '/scores', label: 'Scores' },
   { to: '/standings', label: 'Live Standings' },
   { to: '/matchups', label: 'Matchups' },
   { to: '/stats', label: 'Players' },
@@ -125,7 +126,14 @@ function NavLabel({ to, label }: { to: string; label: string }) {
 const guestNavItems = [{ to: '/', label: 'Home' }, ...authedNavItems];
 
 /** Data-heavy pages need the full viewport width so stat tables fit without scrolling. */
-const WIDE_MAIN_PATHS = new Set(['/rosters', '/standings', '/matchups', '/stats', '/team-stats']);
+const WIDE_MAIN_PATHS = new Set([
+  '/rosters',
+  '/scores',
+  '/standings',
+  '/matchups',
+  '/stats',
+  '/team-stats',
+]);
 
 export function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();

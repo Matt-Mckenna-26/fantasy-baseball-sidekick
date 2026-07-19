@@ -50,42 +50,315 @@
   background: var(--panel);
   border: 1px solid var(--border);
   border-bottom-left-radius: 6px;
+  /* Wider than user bubbles so structured content (sections, tables) reads well. */
+  max-width: min(88%, 46rem);
 }
 
-.bubbleThinking {
-  display: inline-flex;
-  gap: 0.25rem;
+/* Markdown-rendered assistant content: clean, scannable prose with card-like tables. */
+.prose {
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p {
+  margin: 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.prose h1 {
+  font-size: 1.1rem;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.prose li {
+  margin: 0;
+}
+
+.prose li::marker {
+  color: var(--muted);
+}
+
+.prose strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prose a {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.05rem 0.3rem;
+}
+
+.prose pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.prose blockquote {
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.35rem 0;
+}
+
+/* Wide comparison tables scroll horizontally instead of clipping cells. */
+.prose :global(.proseTableScroll) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0.35rem 0;
+}
+
+/* Comparison tables render as a compact bordered card. */
+.prose table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 0;
+}
+
+.prose th,
+.prose td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.prose th {
+  background: var(--bg);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prose tr:last-child td {
+  border-bottom: none;
+}
+
+/* Stacks an assistant reply's activity summary above its bubble (left-aligned). */
+.messageCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: min(88%, 46rem);
+}
+
+.rowUser .messageCol {
+  align-items: flex-end;
+  max-width: min(78%, 36rem);
+}
+
+.messageCol .bubble {
+  max-width: 100%;
+}
+
+/* Live tool activity panel — single stable container while a reply streams in. */
+.activityPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: min(88%, 46rem);
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+  font-size: 0.875rem;
+}
+
+.activityRow {
+  display: flex;
   align-items: center;
-  min-height: 2.5rem;
+  gap: 0.55rem;
+  min-height: 1.75rem;
+  padding: 0.1rem 0;
+  color: var(--muted);
 }
 
-.dot {
-  width: 7px;
-  height: 7px;
+.activityRowActive {
+  color: var(--text);
+}
+
+.activityRowDone {
+  color: var(--muted);
+}
+
+.activityStatusSlot {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+}
+
+.activityRowLabel {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Fixed-width trailing ellipsis so active rows don't change width. */
+.ellipsis {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  width: 1.35rem;
+}
+
+.ellipsisDot {
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--muted);
-  animation: dot-bounce 1.2s infinite ease-in-out;
+  background: currentColor;
+  opacity: 0.35;
+  animation: ellipsis-pulse 1.2s infinite ease-in-out;
 }
 
-.dot:nth-child(2) {
+.ellipsisDot:nth-child(2) {
   animation-delay: 0.15s;
 }
 
-.dot:nth-child(3) {
+.ellipsisDot:nth-child(3) {
   animation-delay: 0.3s;
 }
 
-@keyframes dot-bounce {
+@keyframes ellipsis-pulse {
   0%,
   60%,
   100% {
-    transform: translateY(0);
-    opacity: 0.5;
+    opacity: 0.35;
   }
   30% {
-    transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+/* Rotating ring for a tool that's still running. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: activity-spin 0.7s linear infinite;
+}
+
+.activityIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Collapsed, expandable summary of the tools a finished reply used. */
+.activitySummary {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.activitySummaryLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0.15rem 0.1rem;
+  list-style: none;
+  user-select: none;
+}
+
+.activitySummaryLabel::-webkit-details-marker {
+  display: none;
+}
+
+.activitySummaryLabel::before {
+  content: '▸';
+  font-size: 0.75rem;
+  transition: transform 120ms ease;
+}
+
+.activitySummary[open] .activitySummaryLabel::before {
+  transform: rotate(90deg);
+}
+
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.2rem 0.1rem;
+}
+
+.activityItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
 }
 
 .composerDock {
@@ -266,8 +539,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot {
+  .spinner {
     animation: none;
+  }
+
+  .ellipsisDot {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .activitySummaryLabel::before {
+    transition: none;
   }
 
   .sendButton:active:not(:disabled) {

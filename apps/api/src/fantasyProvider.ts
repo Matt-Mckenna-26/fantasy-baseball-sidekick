@@ -1,17 +1,22 @@
 import {
   inferPlayerPositionType,
   leagueMatchupsResponseSchema,
+  leagueFreeAgentsResponseSchema,
   leagueRostersResponseSchema,
   leagueStandingsResponseSchema,
   leagueTeamStatsResponseSchema,
+  leagueTransactionsResponseSchema,
   meLeaguesResponseSchema,
   playerStatsResponseSchema,
   teamStatsResponseSchema,
   teamWeekStatsResponseSchema,
+  type LeagueFreeAgentsResponse,
   type LeagueMatchupsResponse,
   type LeagueRostersResponse,
   type LeagueStandingsResponse,
   type LeagueTeamStatsResponse,
+  type LeagueTransaction,
+  type LeagueTransactionsResponse,
   type Matchup,
   type MatchupStatWinner,
   type MatchupTeam,
@@ -28,6 +33,7 @@ import {
   type TeamStatLine,
   type TeamStatsResponse,
   type TeamWeekStatsResponse,
+  type TransactionPlayer,
 } from '@fcm/contracts';
 import type {
   default as YahooFantasy,
@@ -44,6 +50,7 @@ import type {
 import type { AppConfig } from './config.js';
 import type { YahooTokens } from './tokenStore.js';
 import { MockFantasyProvider } from './fantasyProvider.mock.js';
+import { MlbStatsProvider } from './mlbStatsProvider.js';
 import {
   TEAM_STAT_WINDOW_SIZE,
   aggregateWeeklyTeamStats,
@@ -102,14 +109,55 @@ export interface FantasyProvider {
     leagueId: string,
     onTokensRefreshed?: OnTokensRefreshed,
   ): Promise<LeagueMatchupsResponse>;
+  getFreeAgents(
+    tokens: YahooTokens,
+    leagueId: string,
+    query: FreeAgentsQuery,
+    onTokensRefreshed?: OnTokensRefreshed,
+  ): Promise<LeagueFreeAgentsResponse>;
+  getLeagueTransactions(
+    tokens: YahooTokens,
+    leagueId: string,
+    count: number,
+    onTokensRefreshed?: OnTokensRefreshed,
+  ): Promise<LeagueTransactionsResponse>;
 }
 
 /**
+ * Filters for a free-agent lookup. Availability is Yahoo's own status filter, not a
+ * client-side roster diff: 'FA' = unrostered free agents (default), 'A' = available
+ * (free agents + waivers). `sortType` picks the window Yahoo ranks by so callers can
+ * surface hot recent pickups; `limit` caps how many players are returned PER table
+ * (batting AND pitching), each filled independently and bounded server-side.
+ */
+export interface FreeAgentsQuery {
+  range: StatRange;
+  availability?: 'FA' | 'A';
+  position?: string;
+  sortType?: 'season' | 'lastweek' | 'lastmonth';
+  limit?: number;
+}
+
+/**
+ * Yahoo caps the players collection at 25 rows per page, so a robust free-agent list is
+ * paged. FREE_AGENT_LIMIT/MAX bound how many players we return PER table (batting AND
+ * pitching); each table is filled independently so a pitcher-heavy free-agent pool never
+ * starves the hitter table. Bounds keep Yahoo call count, latency, and token cost in check.
+ */
+const FREE_AGENT_PAGE = 25;
+const FREE_AGENT_LIMIT = 50;
+const FREE_AGENT_MAX = 100;
+
+/**
  * Select the data provider from config. Auth is enforced upstream regardless of
- * mode; this only decides where authed data comes from (see plan-of-record).
+ * mode; this only decides where authed data comes from (see plan-of-record). When
+ * `statsSource` is 'mlb', the base provider is wrapped so player/free-agent stat
+ * VALUES come from the MLB Stats API while Yahoo still owns identity, ownership, and
+ * rank; every other method passes through unchanged.
  */
 export function createFantasyProvider(config: AppConfig): FantasyProvider {
-  return config.dataMode === 'mock' ? new MockFantasyProvider() : new YahooFantasyProvider(config);
+  const base = config.dataMode === 'mock' ? new MockFantasyProvider() : new YahooFantasyProvider(config);
+  return config.statsSource === 'mlb' ? new MlbStatsProvider(base) : base;
 }
 
 /** Yahoo's MLB game code; used to scope league queries to baseball. */
@@ -217,6 +265,7 @@ function mapPlayerCore(p: YahooPlayer): Player {
     // Yahoo abbreviations vary in case across seasons; normalize to upper for the UI.
     ...(p.editorial_team_abbr ? { mlbTeamAbbr: p.editorial_team_abbr.toUpperCase() } : {}),
     eligiblePositions,
+    ...(typeof p.display_position === 'string' ? { displayPosition: p.display_position } : {}),
     ...(positionType ? { positionType } : {}),
     ...(p.status ? { status: p.status } : {}),
     ...(headshotUrl ? { headshotUrl } : {}),
@@ -341,6 +390,36 @@ async function fetchOverallRanks(
     });
   });
   return ranks;
+}
+
+/**
+ * Page the league's players collection for a single availability/position filter,
+ * sorted by actual rank, until `perType` players are collected (Yahoo caps each page at
+ * 25). Pages are fetched in parallel and deduped by player_key. Used to fill the batting
+ * and pitching free-agent tables independently.
+ */
+async function fetchFreeAgentPool(
+  yf: YahooFantasy,
+  leagueId: string,
+  filters: Record<string, string | number>,
+  perType: number,
+): Promise<YahooPlayer[]> {
+  const pageCount = Math.ceil(perType / FREE_AGENT_PAGE);
+  const starts = Array.from({ length: pageCount }, (_, i) => i * FREE_AGENT_PAGE);
+  const pages = await Promise.all(
+    starts.map((start) => yf.players.leagues(leagueId, { ...filters, start, count: FREE_AGENT_PAGE })),
+  );
+  const seen = new Set<string>();
+  const players: YahooPlayer[] = [];
+  for (const page of pages) {
+    for (const p of page?.[0]?.players ?? []) {
+      if (typeof p.player_key === 'string' && !seen.has(p.player_key)) {
+        seen.add(p.player_key);
+        players.push(p);
+      }
+    }
+  }
+  return players.slice(0, perType);
 }
 
 /**
@@ -506,6 +585,129 @@ export function parseTeamStats(response: RawTeamStatsResponse, columns: StatColu
   }
   // "-" is Yahoo's own placeholder for an unavailable value; keep columns aligned.
   return columns.map((col) => ({ key: col.key, value: byStatId.get(col.key) ?? '-' }));
+}
+
+/* Raw shapes for the un-mapped `league/{key}/transactions` collection. We parse it
+ * directly (rather than the library's league.transactions(), which is unfiltered and
+ * fetches the whole season) so we can bound the payload with a `;count=N` filter. */
+interface RawTransactionData {
+  type?: string;
+  source_type?: string;
+  source_team_name?: string;
+  destination_type?: string;
+  destination_team_name?: string;
+}
+interface RawTransactionPlayerNode {
+  player?: [unknown[], { transaction_data?: RawTransactionData | RawTransactionData[] }?];
+}
+interface RawTransactionMeta {
+  transaction_key?: string;
+  transaction_id?: string;
+  type?: string;
+  status?: string;
+  timestamp?: string | number;
+}
+interface RawTransactionNode {
+  transaction?: [RawTransactionMeta, { players?: { count?: number; [index: string]: unknown } }?];
+}
+interface RawLeagueTransactionsResponse {
+  fantasy_content?: {
+    league?: [unknown, { transactions?: { count?: number; [index: string]: unknown } }?];
+  };
+}
+
+/** Transaction types we surface (roster moves); commissioner-only moves are dropped. */
+const KEPT_TRANSACTION_TYPES = new Set<LeagueTransaction['type']>([
+  'add',
+  'drop',
+  'add/drop',
+  'trade',
+]);
+
+/** Yahoo's per-player transaction_data.type maps to how the player moved. */
+function toTransactionMovement(type: string | undefined): TransactionPlayer['movement'] | undefined {
+  return type === 'add' || type === 'drop' || type === 'trade' ? type : undefined;
+}
+
+/** Map one raw transaction player node to our DTO player (undefined when it lacks a movement). */
+function mapTransactionPlayerNode(node: RawTransactionPlayerNode): TransactionPlayer | undefined {
+  const meta = mergePlayerMeta(Array.isArray(node.player?.[0]) ? node.player[0] : []);
+  const raw = node.player?.[1]?.transaction_data;
+  const data = Array.isArray(raw) ? raw[0] : raw;
+  const movement = toTransactionMovement(data?.type);
+  if (!movement) return undefined;
+  const name = meta.name as { full?: string } | undefined;
+  const abbr = meta.editorial_team_abbr;
+  return {
+    playerId: String(meta.player_id ?? ''),
+    fullName: name?.full ?? 'Unknown Player',
+    ...(typeof abbr === 'string' ? { mlbTeamAbbr: abbr.toUpperCase() } : {}),
+    ...(typeof meta.display_position === 'string' ? { displayPosition: meta.display_position } : {}),
+    ...(meta.position_type === 'B' || meta.position_type === 'P'
+      ? { positionType: meta.position_type }
+      : {}),
+    movement,
+    ...(typeof data?.source_team_name === 'string' ? { sourceTeamName: data.source_team_name } : {}),
+    ...(typeof data?.destination_team_name === 'string'
+      ? { destinationTeamName: data.destination_team_name }
+      : {}),
+  };
+}
+
+/** Map one raw transaction node to our DTO (undefined for filtered-out types, e.g. commish). */
+function mapTransactionNode(node: RawTransactionNode): LeagueTransaction | undefined {
+  const meta = node.transaction?.[0];
+  const type = meta?.type as LeagueTransaction['type'] | undefined;
+  if (!meta || !type || !KEPT_TRANSACTION_TYPES.has(type)) return undefined;
+  const playersColl = node.transaction?.[1]?.players;
+  const players: TransactionPlayer[] = [];
+  const count = typeof playersColl?.count === 'number' ? playersColl.count : 0;
+  for (let i = 0; i < count; i++) {
+    const pnode = playersColl?.[String(i)] as RawTransactionPlayerNode | undefined;
+    if (pnode?.player) {
+      const mapped = mapTransactionPlayerNode(pnode);
+      if (mapped) players.push(mapped);
+    }
+  }
+  return {
+    transactionId: String(meta.transaction_id ?? meta.transaction_key ?? ''),
+    type,
+    status: typeof meta.status === 'string' ? meta.status : 'successful',
+    timestamp: toOptionalNumber(meta.timestamp) ?? 0,
+    players,
+  };
+}
+
+/**
+ * Parse the raw `league/{key}/transactions` collection into our DTO: newest first,
+ * commissioner-only moves dropped, capped to `limit`. Exported for unit testing
+ * against captured Yahoo payloads without any network access.
+ */
+export function parseLeagueTransactions(
+  response: RawLeagueTransactionsResponse,
+  leagueId: string,
+  limit: number,
+): LeagueTransactionsResponse {
+  const coll = response.fantasy_content?.league?.[1]?.transactions ?? {};
+  const count = typeof coll.count === 'number' ? coll.count : 0;
+  const transactions: LeagueTransaction[] = [];
+  for (let i = 0; i < count; i++) {
+    const node = coll[String(i)] as RawTransactionNode | undefined;
+    if (node?.transaction) {
+      const mapped = mapTransactionNode(node);
+      if (mapped) transactions.push(mapped);
+    }
+  }
+  transactions.sort((a, b) => b.timestamp - a.timestamp);
+  return leagueTransactionsResponseSchema.parse({
+    leagueId,
+    transactions: transactions.slice(0, limit),
+  });
+}
+
+/** URL for a league's recent transactions, bounded by `count` (Yahoo returns newest first). */
+function leagueTransactionsUrl(leagueId: string, count: number): string {
+  return `https://fantasysports.yahooapis.com/fantasy/v2/league/${leagueId}/transactions;count=${count}`;
 }
 
 /** Parse an optional Yahoo count (string|number) into a finite number, else undefined. */
@@ -736,6 +938,12 @@ function rangeToStatsSegment(range: StatRange): string {
       return '/stats;type=lastmonth';
     case 'season':
       return '/stats;type=season';
+    case 'last14':
+    case 'last21':
+      // Yahoo has no native 14- or 21-day coverage; these windows are only served by
+      // the MLB stats source, which never routes through the Yahoo provider (it
+      // substitutes 'season' for scaffolding). Guard so a misconfiguration fails loudly.
+      throw new Error(`${range} is not supported by the Yahoo stats source.`);
   }
 }
 
@@ -1138,6 +1346,123 @@ export class YahooFantasyProvider implements FantasyProvider {
     console.warn(
       `[live] matchups: week=${dto.week} ${dto.matchups.length} matchups for league ${leagueId}`,
     );
+    return dto;
+  }
+
+  /**
+   * Unrostered (or waiver-available) players for a league, split into batting and
+   * pitching tables. Availability is Yahoo's own `status` filter (FA/A) via the proven
+   * players.leagues path; being unrostered IS the dedup (rostered players never carry
+   * status=FA), and the UI further drops any FA whose player_key is already rostered.
+   *
+   * The batting and pitching tables are filled independently using Yahoo's position=B /
+   * position=P meta-filters, each paged up to `limit` players (Yahoo caps a page at 25).
+   * This fixes the old single-mixed-page behaviour, where one 25-row page split into
+   * batters + pitchers could surface only a handful of hitters. A caller-pinned position
+   * collapses to a single pool. A second call joins real scoring-category values by
+   * player_key (the same path getPlayerStats uses). Cost: settings (1) + paged FA lists
+   * (ceil(limit/25) per table) + one stats call per PLAYER_KEY_CHUNK players.
+   */
+  async getFreeAgents(
+    tokens: YahooTokens,
+    leagueId: string,
+    query: FreeAgentsQuery,
+    onTokensRefreshed?: OnTokensRefreshed,
+  ): Promise<LeagueFreeAgentsResponse> {
+    const { range, availability = 'FA', position, sortType = 'season', limit } = query;
+    const yf = createYahooClient(this.config, onTokensRefreshed);
+    yf.setUserToken(tokens.accessToken);
+    yf.setRefreshToken(tokens.refreshToken);
+
+    const settings = await yf.league.settings(leagueId);
+    const cats = settings.settings?.stat_categories ?? [];
+    const battingColumns = buildBattingStatColumns(cats);
+    const pitchingColumns = buildPitchingStatColumns(cats);
+
+    const perType = Math.min(Math.max(Math.trunc(limit ?? FREE_AGENT_LIMIT), 1), FREE_AGENT_MAX);
+    const baseFilters: Record<string, string | number> = {
+      status: availability,
+      sort: 'AR',
+      sort_type: sortType,
+    };
+
+    // Fill each table independently (Yahoo's position=B / position=P meta-filters) so a
+    // pitcher-heavy free-agent pool never starves the hitter table. A caller-pinned
+    // position yields a single pool, split by the player's own position_type.
+    let rawBatters: YahooPlayer[];
+    let rawPitchers: YahooPlayer[];
+    if (position) {
+      const pool = await fetchFreeAgentPool(yf, leagueId, { ...baseFilters, position }, perType);
+      rawBatters = pool.filter((p) => p.position_type !== 'P');
+      rawPitchers = pool.filter((p) => p.position_type === 'P');
+    } else {
+      [rawBatters, rawPitchers] = await Promise.all([
+        fetchFreeAgentPool(yf, leagueId, { ...baseFilters, position: 'B' }, perType),
+        fetchFreeAgentPool(yf, leagueId, { ...baseFilters, position: 'P' }, perType),
+      ]);
+    }
+
+    // Join real scoring-category values via the proven league players/stats path.
+    const playerKeys = [...rawBatters, ...rawPitchers]
+      .map((p) => p.player_key)
+      .filter((k): k is string => typeof k === 'string' && k.length > 0);
+    const statChunks = await Promise.all(
+      chunk(playerKeys, PLAYER_KEY_CHUNK).map((keys) =>
+        yf.api<RawLeaguePlayersResponse>('GET', leaguePlayersStatsUrl(leagueId, keys, range)),
+      ),
+    );
+    const statsByKey = new Map<string, Map<string, string | number>>();
+    for (const raw of statChunks) {
+      for (const [key, stats] of parseLeaguePlayerStatMap(raw)) statsByKey.set(key, stats);
+    }
+
+    const toLine = (p: YahooPlayer, columns: StatColumn[]): PlayerStatLine => {
+      const byStatId = statsByKey.get(p.player_key);
+      return {
+        player: mapPlayerCore(p),
+        // "-" is Yahoo's own placeholder for an unavailable value; keep columns aligned.
+        stats: columns.map((col) => ({ key: col.key, value: byStatId?.get(col.key) ?? '-' })),
+      };
+    };
+    const batting = rawBatters.map((p) => toLine(p, battingColumns));
+    const pitching = rawPitchers.map((p) => toLine(p, pitchingColumns));
+
+    console.warn(
+      `[live] free-agents: league ${leagueId} status=${availability} range=${range} -> ` +
+        `${batting.length} batters, ${pitching.length} pitchers`,
+    );
+    return leagueFreeAgentsResponseSchema.parse({
+      leagueId,
+      range,
+      batting: { columns: battingColumns, players: batting },
+      pitching: { columns: pitchingColumns, players: pitching },
+    });
+  }
+
+  /**
+   * Recent league transactions (adds, drops/waivers, trades), newest first and
+   * bounded to `count`. Uses the raw transactions endpoint with a `;count=N` filter
+   * (the library's league.transactions() is unfiltered and pulls the whole season).
+   * Commissioner-only moves are dropped in the parser. Single Yahoo call; only
+   * non-sensitive counts are logged (see security rule).
+   */
+  async getLeagueTransactions(
+    tokens: YahooTokens,
+    leagueId: string,
+    count: number,
+    onTokensRefreshed?: OnTokensRefreshed,
+  ): Promise<LeagueTransactionsResponse> {
+    const yf = createYahooClient(this.config, onTokensRefreshed);
+    yf.setUserToken(tokens.accessToken);
+    yf.setRefreshToken(tokens.refreshToken);
+
+    const raw = await yf.api<RawLeagueTransactionsResponse>(
+      'GET',
+      leagueTransactionsUrl(leagueId, count),
+    );
+    const dto = parseLeagueTransactions(raw, leagueId, count);
+
+    console.warn(`[live] transactions: ${dto.transactions.length} for league ${leagueId}`);
     return dto;
   }
 }

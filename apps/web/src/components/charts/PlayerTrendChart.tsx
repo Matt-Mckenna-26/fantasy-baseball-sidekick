@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -12,11 +12,13 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import type { PlayerTrendRow } from '../../lib/playerTrend';
+import { downloadTrendChartPng, type TrendLegendRow } from '../../lib/chartExport';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { CHART_THEME } from './palette';
+import { ChartDownloadButton } from './ChartDownloadButton';
 import styles from './charts.module.css';
 
-interface TrendPlayer {
+export interface TrendPlayer {
   id: string;
   name: string;
   headshotUrl?: string;
@@ -68,13 +70,132 @@ function ordinal(n: number): string {
   }
 }
 
+export function buildTrendLegendRows(
+  rows: PlayerTrendRow[],
+  players: TrendPlayer[],
+  seasonBaseline: Record<string, number | null>,
+  colorMap: Map<string, string>,
+): { ranked: TrendLegendRow[]; hasL21: boolean; hasL14: boolean } {
+  const last30 = rows.find((r) => r.range === 'last30');
+  const last21 = rows.find((r) => r.range === 'last21');
+  const last14 = rows.find((r) => r.range === 'last14');
+  const last7 = rows.find((r) => r.range === 'last7');
+  const hasL21 = last21 != null;
+  const hasL14 = last14 != null;
+
+  const ranked = players
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      ...(p.owner ? { owner: p.owner } : {}),
+      ...(p.headshotUrl ? { headshotUrl: p.headshotUrl } : {}),
+      color: colorMap.get(p.id) ?? CHART_THEME.accent,
+      l30: cell(last30?.[p.id]),
+      l21: cell(last21?.[p.id]),
+      l14: cell(last14?.[p.id]),
+      l7: cell(last7?.[p.id]),
+      szn: cell(seasonBaseline[p.id]),
+    }))
+    .filter(
+      (r) => r.l30 !== null || r.l21 !== null || r.l14 !== null || r.l7 !== null || r.szn !== null,
+    )
+    .sort((a, b) => (b.l7 ?? b.l14 ?? b.l21 ?? b.l30 ?? -1) - (a.l7 ?? a.l14 ?? a.l21 ?? a.l30 ?? -1));
+
+  return { ranked, hasL21, hasL14 };
+}
+
+function TrendLegendTable({
+  metricLabel,
+  ranked,
+  hasL21,
+  hasL14,
+  colorMap,
+  hoveredId,
+  activeRowRef,
+  hideAvatars = false,
+}: {
+  metricLabel: string;
+  ranked: TrendLegendRow[];
+  hasL21: boolean;
+  hasL14: boolean;
+  colorMap: Map<string, string>;
+  hoveredId?: string | null;
+  activeRowRef?: RefObject<HTMLDivElement | null>;
+  /** Omit the per-row avatar (used when series are metrics, not players). */
+  hideAvatars?: boolean;
+}) {
+  if (ranked.length === 0) return null;
+
+  return (
+    <>
+      <p className={styles.tooltipTitle}>{metricLabel} percentile</p>
+      <div
+        className={`${styles.tooltipMetricsHead}${hasL21 ? ` ${styles.withL21}` : ''}${hasL14 ? ` ${styles.withL14}` : ''}`}
+      >
+        <span className={styles.tooltipMetricsName} />
+        <span className={styles.tooltipMetricCol}>L30</span>
+        {hasL21 ? <span className={styles.tooltipMetricCol}>L21</span> : null}
+        {hasL14 ? <span className={styles.tooltipMetricCol}>L14</span> : null}
+        <span className={styles.tooltipMetricCol}>L7</span>
+        <span className={styles.tooltipMetricCol}>Szn</span>
+      </div>
+      {ranked.map((row) => {
+        const isActive = row.id === hoveredId;
+        return (
+          <div
+            key={row.id}
+            ref={isActive ? activeRowRef : null}
+            className={`${styles.tooltipMetricsRow}${hasL21 ? ` ${styles.withL21}` : ''}${hasL14 ? ` ${styles.withL14}` : ''}${isActive ? ` ${styles.tooltipMetricsRowActive}` : ''}`}
+          >
+            <span className={styles.tooltipMetricsName}>
+              <span className={styles.tooltipSwatch} style={{ background: row.color }} />
+              {hideAvatars ? null : (
+                <span className={styles.tooltipAvatar}>
+                  <PlayerAvatar
+                    fullName={row.name}
+                    {...(row.headshotUrl ? { headshotUrl: row.headshotUrl } : {})}
+                  />
+                </span>
+              )}
+              <span className={styles.tooltipNameCol}>
+                <span className={styles.tooltipPlayerName}>{row.name}</span>
+                {row.owner ? <span className={styles.tooltipOwner}>{row.owner}</span> : null}
+              </span>
+            </span>
+            <span className={styles.tooltipMetricCol}>
+              {row.l30 == null ? '\u2013' : ordinal(row.l30)}
+            </span>
+            {hasL21 ? (
+              <span className={styles.tooltipMetricCol}>
+                {row.l21 == null ? '\u2013' : ordinal(row.l21)}
+              </span>
+            ) : null}
+            {hasL14 ? (
+              <span className={styles.tooltipMetricCol}>
+                {row.l14 == null ? '\u2013' : ordinal(row.l14)}
+              </span>
+            ) : null}
+            <span className={styles.tooltipMetricCol}>
+              {row.l7 == null ? '\u2013' : ordinal(row.l7)}
+            </span>
+            <span className={styles.tooltipMetricCol}>
+              {row.szn == null ? '\u2013' : ordinal(row.szn)}
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * Combo "recent form" chart, all in percentile space (0-100) within the rostered pool so
  * every window is comparable regardless of length. A solid line connects each player's
- * Last 30 -> Last 7 percentile (the trend), and a dashed horizontal line marks their
+ * recent-window percentiles (the trend), and a dashed horizontal line marks their
  * Season percentile as a separate baseline - so rising above the dashed line means the
  * player is hotter than their season-long rank. The tooltip lays out every player's full
- * set of series (Last 30 / Last 7 / Season) so the whole picture reads at a glance.
+ * set of series (Last 30 / Last 21 and Last 14 when available / Last 7 / Season) so the
+ * whole picture reads at a glance.
  */
 export const PlayerTrendChart = memo(function PlayerTrendChart({
   rows,
@@ -82,15 +203,46 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
   players,
   metricLabel,
   colorMap,
+  fillHeight = false,
+  hideAvatars = false,
 }: {
   rows: PlayerTrendRow[];
   seasonBaseline: Record<string, number | null>;
   players: TrendPlayer[];
   metricLabel: string;
   colorMap: Map<string, string>;
+  /** Flex to fill the parent's height (for the fixed-height player-focus modal) instead of a fixed 475px. */
+  fillHeight?: boolean;
+  /** Omit legend avatars (used when each series is a metric rather than a player). */
+  hideAvatars?: boolean;
 }) {
   // Which series the cursor is over, so the tooltip and lines can focus on it.
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
+
+  const legend = useMemo(
+    () => buildTrendLegendRows(rows, players, seasonBaseline, colorMap),
+    [rows, players, seasonBaseline, colorMap],
+  );
+
+  const handleExport = useCallback(async () => {
+    if (!chartRef.current || exporting) return;
+    setExporting(true);
+    try {
+      await downloadTrendChartPng({
+        chartRoot: chartRef.current,
+        metricLabel,
+        legendRows: legend.ranked,
+        hasL21: legend.hasL21,
+        hasL14: legend.hasL14,
+      });
+    } catch (err) {
+      console.error('PNG export failed', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, legend, metricLabel]);
 
   if (rows.length === 0 || players.length === 0) {
     return <p className={styles.empty}>Add players to see their recent {metricLabel} form.</p>;
@@ -112,8 +264,19 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
   const { domain, ticks } = fitScale(plotted);
 
   return (
-    <div style={{ width: '100%', height: 475 }}>
-      <ResponsiveContainer>
+    <div className={`${styles.trendChartWrap}${fillHeight ? ` ${styles.trendChartFill}` : ''}`}>
+      <div className={styles.trendChartActions}>
+        <ChartDownloadButton
+          onClick={() => void handleExport()}
+          busy={exporting}
+        />
+      </div>
+      <div
+        ref={chartRef}
+        data-chart-surface
+        style={fillHeight ? { width: '100%', flex: 1, minHeight: 0 } : { width: '100%', height: 475 }}
+      >
+        <ResponsiveContainer>
         <LineChart data={rows} margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
           {/* Heat backdrop: reddish toward the top (high percentile), blueish toward
               the bottom (low), echoing the grid's hot/cold coloring. */}
@@ -160,8 +323,9 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
                 key={`base-${p.id}`}
                 y={base}
                 stroke={colorMap.get(p.id) ?? CHART_THEME.accent}
-                strokeDasharray="4 4"
-                strokeOpacity={dimmed ? 0.12 : hoveredId === p.id ? 0.7 : 0.45}
+                strokeDasharray="7 4"
+                strokeWidth={hoveredId === p.id ? 2.5 : 2}
+                strokeOpacity={dimmed ? 0.18 : hoveredId === p.id ? 0.95 : 0.7}
               />
             );
           })}
@@ -176,6 +340,7 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
                 seasonBaseline={seasonBaseline}
                 colorMap={colorMap}
                 hoveredId={hoveredId}
+                hideAvatars={hideAvatars}
               />
             )}
           />
@@ -201,6 +366,7 @@ export const PlayerTrendChart = memo(function PlayerTrendChart({
           })}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 });
@@ -213,6 +379,7 @@ function TrendTooltip({
   seasonBaseline,
   colorMap,
   hoveredId,
+  hideAvatars = false,
 }: TooltipContentProps & {
   rows: PlayerTrendRow[];
   players: TrendPlayer[];
@@ -220,6 +387,7 @@ function TrendTooltip({
   seasonBaseline: Record<string, number | null>;
   colorMap: Map<string, string>;
   hoveredId: string | null;
+  hideAvatars?: boolean;
 }) {
   const activeRowRef = useRef<HTMLDivElement>(null);
   // Keep the focused player's row visible even when the list overflows.
@@ -228,66 +396,26 @@ function TrendTooltip({
   }, [hoveredId]);
 
   if (!active) return null;
-  const last30 = rows.find((r) => r.range === 'last30');
-  const last7 = rows.find((r) => r.range === 'last7');
-
-  // One row per player, best current form (Last 7, then Last 30) first.
-  const ranked = players
-    .map((p) => ({
-      player: p,
-      l30: cell(last30?.[p.id]),
-      l7: cell(last7?.[p.id]),
-      szn: cell(seasonBaseline[p.id]),
-    }))
-    .filter((r) => r.l30 !== null || r.l7 !== null || r.szn !== null)
-    .sort((a, b) => (b.l7 ?? b.l30 ?? -1) - (a.l7 ?? a.l30 ?? -1));
-
+  const { ranked, hasL21, hasL14 } = buildTrendLegendRows(rows, players, seasonBaseline, colorMap);
   if (ranked.length === 0) return null;
 
   // When the cursor is on one line, collapse the tooltip to just that player so it's
   // small and unambiguous; otherwise list everyone (best current form first).
-  const focused = hoveredId ? ranked.filter((r) => r.player.id === hoveredId) : [];
+  const focused = hoveredId ? ranked.filter((r) => r.id === hoveredId) : [];
   const list = focused.length > 0 ? focused : ranked;
 
   return (
     <div className={styles.tooltip}>
-      <p className={styles.tooltipTitle}>{metricLabel} percentile</p>
-      <div className={styles.tooltipMetricsHead}>
-        <span className={styles.tooltipMetricsName} />
-        <span className={styles.tooltipMetricCol}>L30</span>
-        <span className={styles.tooltipMetricCol}>L7</span>
-        <span className={styles.tooltipMetricCol}>Szn</span>
-      </div>
-      {list.map(({ player, l30, l7, szn }) => {
-        const isActive = player.id === hoveredId;
-        return (
-        <div
-          key={player.id}
-          ref={isActive ? activeRowRef : null}
-          className={`${styles.tooltipMetricsRow}${isActive ? ` ${styles.tooltipMetricsRowActive}` : ''}`}
-        >
-          <span className={styles.tooltipMetricsName}>
-            <span
-              className={styles.tooltipSwatch}
-              style={{ background: colorMap.get(player.id) ?? CHART_THEME.accent }}
-            />
-            <span className={styles.tooltipAvatar}>
-              <PlayerAvatar
-                fullName={player.name}
-                {...(player.headshotUrl ? { headshotUrl: player.headshotUrl } : {})}
-              />
-            </span>
-            <span className={styles.tooltipNameCol}>
-              <span className={styles.tooltipPlayerName}>{player.name}</span>
-              {player.owner ? <span className={styles.tooltipOwner}>{player.owner}</span> : null}
-            </span>
-          </span>
-          <span className={styles.tooltipMetricCol}>{l30 == null ? '\u2013' : ordinal(l30)}</span>
-          <span className={styles.tooltipMetricCol}>{l7 == null ? '\u2013' : ordinal(l7)}</span>
-          <span className={styles.tooltipMetricCol}>{szn == null ? '\u2013' : ordinal(szn)}</span>
-        </div>
-        );
-      })}
+      <TrendLegendTable
+        metricLabel={metricLabel}
+        ranked={list}
+        hasL21={hasL21}
+        hasL14={hasL14}
+        colorMap={colorMap}
+        hoveredId={hoveredId}
+        activeRowRef={activeRowRef}
+        hideAvatars={hideAvatars}
+      />
     </div>
   );
 }

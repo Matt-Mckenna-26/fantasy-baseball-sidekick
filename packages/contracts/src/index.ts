@@ -27,6 +27,11 @@ export type LeagueSummary = z.infer<typeof leagueSummarySchema>;
 export const meLeaguesResponseSchema = z.object({
   userGuid: z.string().optional(),
   leagues: z.array(leagueSummarySchema),
+  /**
+   * Whether the server can serve the MLB-only 'last14' stat window (i.e. STATS_SOURCE=mlb).
+   * The UI uses this to show or hide the Last 14 control. Absent means not supported.
+   */
+  supportsLast14: z.boolean().optional(),
 });
 export type MeLeaguesResponse = z.infer<typeof meLeaguesResponseSchema>;
 
@@ -61,6 +66,8 @@ export const playerSchema = z.object({
   mlbTeamAbbr: z.string().optional(),
   /** Positions the player is eligible to fill, e.g. ["1B", "OF"]. */
   eligiblePositions: z.array(z.string()),
+  /** Yahoo `display_position`, e.g. "SP", "2B,SS" - preferred short label for grids/filters. */
+  displayPosition: z.string().optional(),
   /** Yahoo player type: batter or pitcher. Used to split IL/BN rows when slot position is ambiguous. */
   positionType: z.enum(['B', 'P']).optional(),
   /** Roster/injury status when relevant, e.g. "DTD", "IL10". */
@@ -157,6 +164,13 @@ export const statColumnSchema = z.object({
    * row can skip them. Absent means aggregatable.
    */
   aggregatable: z.boolean().optional(),
+  /**
+   * Explicit percentile/color direction: true when a higher value is better (HR, AVG),
+   * false when lower is better (ERA, BB/9). Absent falls back to label-based heuristics.
+   * Set by columns (like advanced/expected stats) whose direction can't be inferred
+   * reliably from the label alone.
+   */
+  higherIsBetter: z.boolean().optional(),
 });
 export type StatColumn = z.infer<typeof statColumnSchema>;
 
@@ -176,6 +190,19 @@ export const playerStatLineSchema = z.object({
    * by Yahoo. Optional because a player outside the ranked window has no value.
    */
   overallRank: z.number().optional(),
+  /**
+   * Value+ index: the player's average percentile across the
+   * league's scoring categories, indexed so 100 = league average (like OPS+/wRC+).
+   * Server-computed over the rostered pool. Absent when the player has no scored
+   * categories.
+   */
+  sgptPlus: z.number().optional(),
+  /**
+   * 1-based rank by Value+ across the entire rostered pool, spanning both hitters and
+   * pitchers (percentiles are normalized, so the two are directly comparable). Absent
+   * when the player has no Value+ value.
+   */
+  sgptRank: z.number().optional(),
   /** Fantasy team that rosters this player, for league-wide (all-teams) tables. */
   owner: z.string().optional(),
   /** Owning fantasy team's logo URL, when available. */
@@ -206,11 +233,29 @@ export type PlayerStatsResponse = z.infer<typeof playerStatsResponseSchema>;
 /* -------------------------------------------------------------------------- */
 
 /**
- * The time window a roster stat table covers. Values map to Yahoo coverage types:
- * today -> date, last7 -> lastweek, last30 -> lastmonth, season -> season.
+ * The time window a roster stat table covers. Yahoo coverage types cover today ->
+ * date, last7 -> lastweek, last30 -> lastmonth, season -> season. 'last14' and
+ * 'last21' have no native Yahoo coverage type and are only served when the MLB stats
+ * source is on (values derived from MLB game logs); with the Yahoo source they are
+ * unavailable.
  */
-export const statRangeSchema = z.enum(['today', 'last7', 'last30', 'season']);
+export const statRangeSchema = z.enum(['today', 'last7', 'last14', 'last21', 'last30', 'season']);
 export type StatRange = z.infer<typeof statRangeSchema>;
+
+/**
+ * Response for GET /api/me/leagues/:leagueId/free-agents - unrostered (or waiver-
+ * available) players for a league over a window, split into batting and pitching
+ * tables (parity with playerStatsResponse). Every row's `owner` is absent, which is
+ * itself the "unrostered" signal. Powers both the Player Stats free-agent filter and
+ * the AI co-manager's waiver/pickup tool.
+ */
+export const leagueFreeAgentsResponseSchema = z.object({
+  leagueId: z.string(),
+  range: statRangeSchema,
+  batting: statTableSchema,
+  pitching: statTableSchema,
+});
+export type LeagueFreeAgentsResponse = z.infer<typeof leagueFreeAgentsResponseSchema>;
 
 /**
  * Response for GET /api/me/leagues/:leagueId/teams/:teamId/stats - one team's
@@ -335,6 +380,57 @@ export const leagueStandingsResponseSchema = z.object({
   teams: z.array(standingsRowSchema),
 });
 export type LeagueStandingsResponse = z.infer<typeof leagueStandingsResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* League transactions (recent adds, drops/waivers, trades)                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One player's role within a transaction: `movement` is how this player moved
+ * (added to a team, dropped off one, or traded between two). The team names give
+ * the human-readable log ("X added Player from waivers", "Y traded to Z").
+ */
+export const transactionPlayerSchema = z.object({
+  playerId: z.string(),
+  fullName: z.string(),
+  mlbTeamAbbr: z.string().optional(),
+  /** Yahoo `display_position`, e.g. "SP", "2B,SS". */
+  displayPosition: z.string().optional(),
+  positionType: z.enum(['B', 'P']).optional(),
+  /** How this player moved in the transaction. */
+  movement: z.enum(['add', 'drop', 'trade']),
+  /** Team the player left (drops/trades), when Yahoo provides it. */
+  sourceTeamName: z.string().optional(),
+  /** Team the player joined (adds/trades), when Yahoo provides it. */
+  destinationTeamName: z.string().optional(),
+});
+export type TransactionPlayer = z.infer<typeof transactionPlayerSchema>;
+
+/**
+ * A completed league transaction. `type` follows Yahoo's transaction type
+ * (`add/drop` is a combined pickup+release in one move). `timestamp` is Unix
+ * seconds; commissioner-only moves are filtered out server-side.
+ */
+export const leagueTransactionSchema = z.object({
+  transactionId: z.string(),
+  type: z.enum(['add', 'drop', 'add/drop', 'trade']),
+  status: z.string(),
+  /** When the transaction was processed (Unix seconds). */
+  timestamp: z.number(),
+  players: z.array(transactionPlayerSchema),
+});
+export type LeagueTransaction = z.infer<typeof leagueTransactionSchema>;
+
+/**
+ * Response for GET /api/me/leagues/:leagueId/transactions - the most recent
+ * roster moves (adds, drops/waivers, trades), newest first. Powers the Standings
+ * page activity log and the AI co-manager's recent-transactions tool.
+ */
+export const leagueTransactionsResponseSchema = z.object({
+  leagueId: z.string(),
+  transactions: z.array(leagueTransactionSchema),
+});
+export type LeagueTransactionsResponse = z.infer<typeof leagueTransactionsResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Weekly matchups (head-to-head scoreboard for the current fantasy week)     */
@@ -481,6 +577,167 @@ export const mlbGamesResponseSchema = z.object({
 export type MlbGamesResponse = z.infer<typeof mlbGamesResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
+/* MLB box score (per game) - sourced from the public MLB Stats API. Powers    */
+/* the Scores page's expandable box score. Fantasy ownership is joined on the   */
+/* client by `playerGameKey(teamAbbr, fullName)`, so each row carries fullName. */
+/* -------------------------------------------------------------------------- */
+
+/** One batter's line in a box score. Season AVG is included for context. */
+export const mlbBoxBatterSchema = z.object({
+  fullName: z.string(),
+  /** Fielding position abbreviation, e.g. "SS", "DH". */
+  position: z.string().optional(),
+  /** Lineup slot (1-9) when the player was a starter/in the order. */
+  battingOrder: z.number().int().min(1).max(9).optional(),
+  ab: z.number(),
+  r: z.number(),
+  h: z.number(),
+  rbi: z.number(),
+  hr: z.number(),
+  bb: z.number(),
+  so: z.number(),
+  /** Season batting average as reported by MLB (e.g. ".272"). */
+  avg: z.string().optional(),
+});
+export type MlbBoxBatter = z.infer<typeof mlbBoxBatterSchema>;
+
+/** One pitcher's line in a box score. Season ERA is included for context. */
+export const mlbBoxPitcherSchema = z.object({
+  fullName: z.string(),
+  /** Decision earned in this game: "W", "L", "SV", "HLD", or "BS". */
+  decision: z.string().optional(),
+  /** Innings pitched as reported by MLB (e.g. "5.1"). */
+  ip: z.string(),
+  h: z.number(),
+  r: z.number(),
+  er: z.number(),
+  bb: z.number(),
+  so: z.number(),
+  hr: z.number(),
+  /** Season ERA as reported by MLB (e.g. "5.06"). */
+  era: z.string().optional(),
+});
+export type MlbBoxPitcher = z.infer<typeof mlbBoxPitcherSchema>;
+
+/** One team's half of a box score: line-score totals plus batter/pitcher lines. */
+export const mlbBoxSideSchema = z.object({
+  /** Normalized team abbreviation, matching `playerGameKey`. */
+  teamAbbr: z.string(),
+  teamName: z.string(),
+  runs: z.number(),
+  hits: z.number(),
+  errors: z.number(),
+  batters: z.array(mlbBoxBatterSchema),
+  pitchers: z.array(mlbBoxPitcherSchema),
+});
+export type MlbBoxSide = z.infer<typeof mlbBoxSideSchema>;
+
+/**
+ * Response for GET /api/mlb/games/:gamePk/boxscore - one game's full box score.
+ * The game lifecycle state is intentionally omitted: the boxscore payload does not
+ * carry it, and the client already has it from the games list it opened the card from.
+ */
+export const mlbBoxScoreResponseSchema = z.object({
+  gamePk: z.number(),
+  home: mlbBoxSideSchema,
+  away: mlbBoxSideSchema,
+});
+export type MlbBoxScoreResponse = z.infer<typeof mlbBoxScoreResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Player news (public, keyless): ESPN articles + MLB Stats transactions       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One news item shown in the player-focus modal. `source` distinguishes ESPN
+ * article-style news from MLB Stats API roster transactions (IL moves, trades,
+ * call-ups) so the UI can tag them. Every field but the identity/headline is
+ * optional because the two upstreams populate different subsets.
+ */
+export const playerNewsItemSchema = z.object({
+  /** Stable per-source id (dedupe key within a response). */
+  id: z.string(),
+  source: z.enum(['espn', 'mlb']),
+  /** Upstream category, e.g. ESPN article type or MLB transaction type ("Trade"). */
+  type: z.string().optional(),
+  headline: z.string(),
+  description: z.string().optional(),
+  /** ISO 8601 publish/transaction timestamp when the source provides one. */
+  published: z.string().optional(),
+  /** External link to the full article (ESPN only). */
+  url: z.string().url().optional(),
+  imageUrl: z.string().url().optional(),
+});
+export type PlayerNewsItem = z.infer<typeof playerNewsItemSchema>;
+
+/**
+ * Response for GET /api/mlb/players/news - merged, newest-first news for one
+ * player from the public ESPN + MLB Stats APIs. `matched` is false when the
+ * player id could not be resolved upstream; `items` is still a (possibly empty)
+ * list so the modal always renders. Fails soft: upstream errors yield an empty
+ * list, never a non-2xx.
+ */
+export const playerNewsResponseSchema = z.object({
+  /** The player name the news was resolved for (echoed back). */
+  player: z.string(),
+  matched: z.boolean(),
+  items: z.array(playerNewsItemSchema),
+});
+export type PlayerNewsResponse = z.infer<typeof playerNewsResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Advanced / expected stats ("luck" analysis, public MLB Stats API)          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One advanced-stat row: an actual value and, where the API exposes it, the
+ * Statcast-expected counterpart (e.g. AVG vs xBA). Numbers are pre-parsed so the
+ * UI can render deltas/bars; `format` says how to display them and
+ * `higherIsBetter` colors the actual-vs-expected gap. `expected` is absent for
+ * context-only metrics (BABIP, K%, ISO) that have no expected counterpart.
+ */
+export const advancedStatMetricSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  actual: z.number().optional(),
+  expected: z.number().optional(),
+  format: z.enum(['rate3', 'rate2', 'pct']),
+  higherIsBetter: z.boolean(),
+});
+export type AdvancedStatMetric = z.infer<typeof advancedStatMetricSchema>;
+
+/**
+ * A plain-language luck read derived from the actual-vs-expected gaps: whether the
+ * player looks like a buy-low (results trailing the underlying quality) or a
+ * sell-high / regression risk (results outrunning it).
+ */
+export const advancedStatLuckSchema = z.object({
+  lean: z.enum(['buy', 'sell', 'neutral']),
+  summary: z.string(),
+});
+export type AdvancedStatLuck = z.infer<typeof advancedStatLuckSchema>;
+
+/**
+ * Response for GET /api/mlb/players/advanced - expected + advanced season stats for
+ * one player, keyed to whether they're a hitter or pitcher. `matched` is false when
+ * the player id can't be resolved upstream; `metrics` is then empty (the modal still
+ * renders). Fails soft: upstream errors yield matched:false, never a non-2xx.
+ */
+export const playerAdvancedResponseSchema = z.object({
+  /** The player name the lookup was resolved for (echoed back). */
+  query: z.string(),
+  matched: z.boolean(),
+  player: z.string().optional(),
+  team: z.string().optional(),
+  position: z.string().optional(),
+  group: z.enum(['hitting', 'pitching']).optional(),
+  season: z.number().optional(),
+  metrics: z.array(advancedStatMetricSchema),
+  luck: advancedStatLuckSchema.optional(),
+});
+export type PlayerAdvancedResponse = z.infer<typeof playerAdvancedResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* Chat (AI co-manager)                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -508,12 +765,111 @@ export type ChatTurn = z.infer<typeof chatTurnSchema>;
 export const chatRequestSchema = z.object({
   /** Optional league context so the co-manager can ground its advice. */
   leagueId: z.string().optional(),
+  /** The signed-in user's own team name in this league (so the bot knows "my team"). */
+  teamName: z.string().optional(),
+  /** The league's display name, for natural references in advice. */
+  leagueName: z.string().optional(),
   messages: z.array(chatTurnSchema).min(1),
 });
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 
-/** Response for POST /api/chat - the assistant's reply. */
+/** Token accounting for one chat turn, when the model reports it. */
+export const chatUsageSchema = z.object({
+  promptTokens: z.number().optional(),
+  completionTokens: z.number().optional(),
+  totalTokens: z.number().optional(),
+});
+export type ChatUsage = z.infer<typeof chatUsageSchema>;
+
+/**
+ * A player the assistant substantively referenced in its reply. The server resolves the
+ * names the model tagged against the (Yahoo) player data it fetched this turn, so `playerId`
+ * matches the Players grid and the client can render the same rank cards. UI-only, optional.
+ */
+export const mentionedPlayerSchema = z.object({
+  playerId: z.string(),
+  fullName: z.string(),
+  positionType: z.enum(['B', 'P']).optional(),
+  mlbTeamAbbr: z.string().optional(),
+  headshotUrl: z.string().url().optional(),
+});
+export type MentionedPlayer = z.infer<typeof mentionedPlayerSchema>;
+
+/**
+ * Response for POST /api/chat - the assistant's reply. `toolsUsed` and `usage` are
+ * optional observability fields (which read-only tools the co-manager called and the
+ * token spend for the turn); clients may surface or ignore them. `playersMentioned`
+ * lists the players the reply featured so the UI can render rank cards for them.
+ */
 export const chatResponseSchema = z.object({
   message: chatMessageSchema,
+  toolsUsed: z.array(z.string()).optional(),
+  usage: chatUsageSchema.optional(),
+  playersMentioned: z.array(mentionedPlayerSchema).optional(),
 });
 export type ChatResponse = z.infer<typeof chatResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Chat streaming events (NDJSON over POST /api/chat)                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A tool-activity event streamed as the co-manager works: one 'start' when a
+ * read-only tool begins and one 'end' (with success) when it finishes. Only the
+ * tool name crosses the wire - never arguments or league/player data - so the UI
+ * can show a live "what I'm doing" card per tool without leaking anything.
+ */
+export const chatToolEventSchema = z.object({
+  type: z.literal('tool'),
+  name: z.string(),
+  phase: z.enum(['start', 'end']),
+  /** Present on 'end': whether the tool ran without error. */
+  ok: z.boolean().optional(),
+});
+export type ChatToolEvent = z.infer<typeof chatToolEventSchema>;
+
+/** Terminating event carrying the full reply (mirrors chatResponseSchema). */
+export const chatDoneEventSchema = chatResponseSchema.extend({
+  type: z.literal('done'),
+});
+export type ChatDoneEvent = z.infer<typeof chatDoneEventSchema>;
+
+/**
+ * A chunk of the assistant's reply text as it is generated, so the UI can render the
+ * answer token-by-token instead of waiting for the whole turn. `text` is appended to the
+ * in-progress bubble; the terminating `done` event still carries the authoritative full
+ * reply (with player tags resolved), which replaces the streamed text.
+ */
+export const chatDeltaEventSchema = z.object({
+  type: z.literal('delta'),
+  text: z.string(),
+});
+export type ChatDeltaEvent = z.infer<typeof chatDeltaEventSchema>;
+
+/**
+ * Discard any streamed text buffered so far. Emitted when a completion that produced some
+ * preamble text turns out to be a tool-calling step (that text was not the final answer),
+ * so the UI clears the in-progress bubble before tool activity resumes.
+ */
+export const chatResetEventSchema = z.object({
+  type: z.literal('reset'),
+});
+export type ChatResetEvent = z.infer<typeof chatResetEventSchema>;
+
+/** Emitted if the turn fails after streaming has already begun. */
+export const chatErrorEventSchema = z.object({
+  type: z.literal('error'),
+  code: z.string(),
+  message: z.string(),
+});
+export type ChatErrorEvent = z.infer<typeof chatErrorEventSchema>;
+
+/** Any line the chat stream can emit (one JSON object per NDJSON line). */
+export const chatStreamEventSchema = z.discriminatedUnion('type', [
+  chatToolEventSchema,
+  chatDeltaEventSchema,
+  chatResetEventSchema,
+  chatDoneEventSchema,
+  chatErrorEventSchema,
+]);
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;

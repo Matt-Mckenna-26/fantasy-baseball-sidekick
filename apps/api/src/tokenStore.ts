@@ -2,6 +2,26 @@
 export interface YahooTokens {
   accessToken: string;
   refreshToken: string;
+  /**
+   * Epoch milliseconds at which the access token expires. Optional for backward
+   * compatibility with tokens stored before expiry tracking; when absent, callers
+   * treat the token as due for a proactive refresh.
+   */
+  expiresAt?: number;
+}
+
+/**
+ * Compute an absolute expiry (epoch ms) from Yahoo's `expires_in` (seconds).
+ * Returns undefined when Yahoo omits the field, so callers fall back to
+ * refresh-on-use rather than trusting a stale token.
+ */
+export function expiresAtFromExpiresIn(
+  expiresIn: number | undefined,
+  now: number = Date.now(),
+): number | undefined {
+  return typeof expiresIn === 'number' && Number.isFinite(expiresIn)
+    ? now + expiresIn * 1000
+    : undefined;
 }
 
 /**

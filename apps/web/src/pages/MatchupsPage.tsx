@@ -15,9 +15,11 @@ import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
 import { themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
 import { getLeagueMatchups, getLeagueTeamStats, getTeamWeekStats } from '../api/client';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
+import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerNameButton } from '../components/PlayerNameButton';
 import { MatchupCarousel } from '../components/MatchupCarousel';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
@@ -438,6 +440,8 @@ function PlayerStatsGrid({
           teamName: teamNameById.get(resp.teamId) ?? resp.teamId,
           playerId: line.player.playerId,
           fullName: line.player.fullName,
+          mlbTeamAbbr: line.player.mlbTeamAbbr ?? null,
+          positionType: line.player.positionType ?? null,
           headshotUrl: line.player.headshotUrl ?? null,
         };
         // Split numeric (sort/filter/percentile) from display ("-" placeholder kept).
@@ -470,12 +474,14 @@ function PlayerStatsGrid({
     apiRef.current?.refreshCells({ force: true });
   }, [percentiles]);
 
+  const isNarrow = useIsNarrow();
+
   const columnDefs = useMemo<ColDef<PlayerRow>[]>(() => {
     const base: ColDef<PlayerRow>[] = [
       {
         headerName: 'Team',
         field: 'teamName',
-        minWidth: 150,
+        minWidth: isNarrow ? 120 : 150,
         flex: 1,
         cellRenderer: TeamCell,
         tooltipField: 'teamName',
@@ -484,13 +490,17 @@ function PlayerStatsGrid({
       {
         headerName: 'Player',
         field: 'fullName',
-        minWidth: 180,
+        minWidth: isNarrow ? 140 : 180,
         flex: 2,
+        ...(isNarrow ? { pinned: 'left' as const } : {}),
         cellRenderer: PlayerCell,
         tooltipField: 'fullName',
         filter: 'agTextColumnFilter',
       },
     ];
+    // On narrow screens put Player first so the pinned identity column leads;
+    // Team stays scrollable with the stats.
+    const ordered = isNarrow ? [base[1]!, base[0]!] : base;
     const statCols: ColDef<PlayerRow>[] = columns.map((col) => ({
       headerName: col.label,
       field: col.key,
@@ -501,12 +511,17 @@ function PlayerStatsGrid({
       cellStyle: { padding: 0 },
       filter: 'agNumberColumnFilter',
     }));
-    return [...base, ...statCols];
-  }, [columns]);
+    return [...ordered, ...statCols];
+  }, [columns, isNarrow]);
 
   const defaultColDef = useMemo<ColDef>(
-    () => ({ sortable: true, filter: true, resizable: true, filterParams: GRID_FILTER_PARAMS }),
-    [],
+    () => ({
+      sortable: true,
+      filter: true,
+      resizable: !isNarrow,
+      filterParams: GRID_FILTER_PARAMS,
+    }),
+    [isNarrow],
   );
 
   const emptyTemplate = loading
@@ -549,6 +564,7 @@ function PlayerStatsGrid({
           onGridReady={(e) => {
             apiRef.current = e.api;
           }}
+          rowHeight={isNarrow ? 44 : undefined}
           animateRows
           suppressCellFocus
           tooltipShowDelay={300}
@@ -569,11 +585,25 @@ function TeamCell(params: CustomCellRendererProps) {
 function PlayerCell(params: CustomCellRendererProps) {
   const data = params.data as PlayerRow;
   const fullName = String(data.fullName ?? '');
+  const playerId = String(data.playerId ?? '');
+  const abbr = data.mlbTeamAbbr as string | null;
+  const positionType = data.positionType as 'B' | 'P' | null;
   const headshotUrl = data.headshotUrl as string | null;
   return (
     <span className={styles.playerCellInner}>
       <PlayerAvatar fullName={fullName} {...(headshotUrl ? { headshotUrl } : {})} />
-      <span className={styles.playerName}>{fullName}</span>
+      <span className={styles.playerName}>
+        <PlayerNameButton
+          stopPropagation
+          target={{
+            playerId,
+            fullName,
+            ...(abbr ? { mlbTeamAbbr: abbr } : {}),
+            ...(positionType ? { positionType } : {}),
+            ...(headshotUrl ? { headshotUrl } : {}),
+          }}
+        />
+      </span>
     </span>
   );
 }

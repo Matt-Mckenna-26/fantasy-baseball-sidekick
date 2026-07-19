@@ -1,6 +1,6 @@
 import YahooFantasy from 'yahoo-fantasy';
 import type { AppConfig } from './config.js';
-import type { YahooTokens } from './tokenStore.js';
+import { expiresAtFromExpiresIn, type YahooTokens } from './tokenStore.js';
 
 export type OnTokensRefreshed = (tokens: YahooTokens) => void | Promise<void>;
 
@@ -87,6 +87,38 @@ export function isYahooMalformedResponseCrash(err: unknown): boolean {
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Cap concurrent in-flight Yahoo HTTP calls process-wide. Yahoo rate-limits per account, and
+ * the app now fans out large reads (league player stats, free agents, overall ranks) from both
+ * the chat tools AND the UI's "Players mentioned" cards. Without a gate those bursts overlap,
+ * trip Yahoo's throttle ("Request denied"), and turn into retries (latency) or, once retries are
+ * exhausted, failures. Holding calls beyond this cap in a small queue keeps peak concurrency
+ * under the limit, which cuts both. The slot is held across a call's retries so a throttle storm
+ * can't over-admit. Kept module-level (not per-client) because a fresh client is built per call.
+ */
+const MAX_CONCURRENT_YAHOO_CALLS = 6;
+
+let activeYahooCalls = 0;
+const yahooCallQueue: Array<() => void> = [];
+
+function acquireYahooSlot(): Promise<void> {
+  if (activeYahooCalls < MAX_CONCURRENT_YAHOO_CALLS) {
+    activeYahooCalls += 1;
+    return Promise.resolve();
+  }
+  // At capacity: wait for a slot to be handed off on release (active count is unchanged then).
+  return new Promise<void>((resolve) => yahooCallQueue.push(resolve));
+}
+
+function releaseYahooSlot(): void {
+  const next = yahooCallQueue.shift();
+  if (next) {
+    next(); // hand the slot straight to the next waiter; activeYahooCalls stays the same
+    return;
+  }
+  activeYahooCalls = Math.max(0, activeYahooCalls - 1);
+}
+
 /** Reject with a timeout error if `promise` does not settle within `ms` (the hung attempt is abandoned). */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -140,7 +172,19 @@ function wrapApiWithResilience(yf: YahooFantasy): void {
   yf.api = (<T>(method: string, url: string, postData?: unknown): Promise<T> => {
     // Log only method + path; the query string and auth headers are never included.
     const label = `${method} ${url.split('?')[0]}`;
-    return withYahooRetry<T>(() => withTimeout<T>(originalApi<T>(method, url, postData), API_TIMEOUT_MS, label), label);
+    return (async () => {
+      // Gate every call through the process-wide concurrency limiter so overlapping bursts
+      // stay under Yahoo's per-account rate limit (see MAX_CONCURRENT_YAHOO_CALLS).
+      await acquireYahooSlot();
+      try {
+        return await withYahooRetry<T>(
+          () => withTimeout<T>(originalApi<T>(method, url, postData), API_TIMEOUT_MS, label),
+          label,
+        );
+      } finally {
+        releaseYahooSlot();
+      }
+    })();
   }) as YahooFantasy['api'];
 }
 
@@ -159,9 +203,11 @@ export function createYahooClient(
     config.yahooClientSecret,
     async (data) => {
       if (onTokensRefreshed) {
+        const expiresAt = expiresAtFromExpiresIn(data.expires_in);
         await onTokensRefreshed({
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
+          ...(expiresAt === undefined ? {} : { expiresAt }),
         });
       }
     },

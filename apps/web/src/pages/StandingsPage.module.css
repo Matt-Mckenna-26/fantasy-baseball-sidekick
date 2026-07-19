@@ -140,17 +140,27 @@
   border: 0;
 }
 
-/* Phones: keep three tiles per row, just tighten spacing and the avatar. */
+/* Phones: horizontal scroll-snap strip (peek next card) instead of cramped 3-up. */
 @media (max-width: 640px) {
   .leadersGrid {
-    gap: 0.4rem;
+    display: flex;
+    gap: 0.55rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 0.15rem;
+    padding-bottom: 0.2rem;
+    -webkit-overflow-scrolling: touch;
+    /* Override the inline repeat(N, 1fr) from the board markup. */
+    grid-template-columns: unset !important;
   }
 
   .leaderCard {
+    flex: 0 0 min(14.5rem, 78vw);
     gap: 0.3rem;
-    padding: 0.55rem 0.6rem;
+    padding: 0.65rem 0.75rem;
     border-left-width: 3px;
     border-radius: 12px;
+    scroll-snap-align: start;
   }
 
   .leaderAvatar {
@@ -225,6 +235,45 @@
   .skeletonLine {
     animation: none;
   }
+}
+
+/* Recent transactions log below the standings table. */
+.txBadge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.txPlayers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.txPlayer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.txPlayerName {
+  font-weight: 600;
+}
+
+/* Movement cue reads by symbol + color: green for adds, muted red for drops. */
+.txAdd {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.txDrop {
+  color: #f87171;
+  font-weight: 700;
 }
 
 /* Projected rank movers between the matchup carousel and standings table. */
