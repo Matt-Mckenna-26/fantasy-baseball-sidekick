@@ -140,7 +140,7 @@
 .compareTile {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(148, 163, 184, 0.05);
+  background: var(--panel);
   padding: 0.7rem 0.75rem;
   min-width: 0;
 }

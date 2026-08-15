@@ -1,5 +1,7 @@
+import { ChatBackdrop } from '../chat/ChatBackdrop';
 import { ChatRuntimeProvider } from '../chat/ChatRuntimeProvider';
 import { ChatThread } from '../chat/ChatThread';
+import styles from '../chat/chat.module.css';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { useSession } from '../context/SessionContext';
 
@@ -24,8 +26,15 @@ export function ChatPage() {
   }
 
   return (
-    <ChatRuntimeProvider>
-      <ChatThread />
-    </ChatRuntimeProvider>
+    <div className={styles.stage}>
+      <div className={styles.backdropHost} aria-hidden="true">
+        <ChatBackdrop />
+      </div>
+      <div className={styles.thread}>
+        <ChatRuntimeProvider>
+          <ChatThread />
+        </ChatRuntimeProvider>
+      </div>
+    </div>
   );
 }

@@ -360,9 +360,6 @@ export function ChatThread() {
   const { session } = useSession();
   const league = session.status === 'connected' ? session.selectedLeague : null;
   const greetingSubject = league?.teamName ?? league?.name;
-  const greeting = greetingSubject
-    ? `How can we help ${greetingSubject} today?`
-    : 'How can we help you today?';
   const isEmpty = useAuiState((s) => s.thread.isEmpty);
 
   return (
@@ -381,7 +378,16 @@ export function ChatThread() {
 
       <div className={styles.dock}>
         <ThreadPrimitive.Empty>
-          <h1 className={styles.greeting}>{greeting}</h1>
+          <h1 className={styles.greeting}>
+            {greetingSubject ? (
+              <>
+                How can we help <span className={styles.greetingAccent}>{greetingSubject}</span>{' '}
+                today?
+              </>
+            ) : (
+              'How can we help you today?'
+            )}
+          </h1>
         </ThreadPrimitive.Empty>
 
         <Composer />

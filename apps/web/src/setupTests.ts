@@ -13,3 +13,6 @@ if (!('ResizeObserver' in globalThis)) {
     disconnect() {}
   };
 }
+
+// Chat backdrop uses a canvas; jsdom has no 2d context and otherwise logs on every render.
+HTMLCanvasElement.prototype.getContext = vi.fn(() => null);

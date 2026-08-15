@@ -40,7 +40,7 @@ describe('ChatPage', () => {
     const user = userEvent.setup();
     render(<ChatPage />);
 
-    expect(screen.getByText('How can we help The Show today?')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'How can we help The Show today?' })).toBeInTheDocument();
 
     await user.type(
       screen.getByLabelText('Ask a question about your team'),
@@ -50,7 +50,9 @@ describe('ChatPage', () => {
 
     expect(await screen.findByText('Your bats lead the league in HR.')).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.queryByText('How can we help The Show today?')).not.toBeInTheDocument(),
+      expect(
+        screen.queryByRole('heading', { name: 'How can we help The Show today?' }),
+      ).not.toBeInTheDocument(),
     );
   });
 
@@ -278,7 +280,7 @@ describe('ChatPage', () => {
       expect(screen.queryByText('Your bats lead the league in HR.')).not.toBeInTheDocument(),
     );
     // Back to the empty-state greeting; nothing lingers in the transcript store.
-    expect(screen.getByText('How can we help The Show today?')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'How can we help The Show today?' })).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem('theshowgpt.chat.v1') ?? '[]')).toEqual([]);
     confirmSpy.mockRestore();
   });
