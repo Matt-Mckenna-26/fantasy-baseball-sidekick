@@ -613,6 +613,136 @@ details.toolBubble .toolBubbleHead:hover {
   color: #d6bcfa;
 }
 
+/* ---- web_search activity card: the query + result-count subtitle ---- */
+.searchMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+  padding: 0 0.75rem 0.55rem 2.05rem;
+}
+
+.searchQuery {
+  font-size: 0.82rem;
+  font-style: italic;
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  overflow-wrap: anywhere;
+}
+
+.searchCount {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---- ChatGPT-style "Sources" row under a reply ---- */
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+
+.sourcesLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.sourceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+/* Each source is a clickable glass chip that opens the article in a new tab. */
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 22rem;
+  padding: 0.4rem 0.65rem 0.4rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.sourceBadge:hover,
+.sourceBadge:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 6px 18px color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.sourceIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: color-mix(in srgb, var(--accent) 90%, var(--text));
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.sourceFavIcon,
+.sourceFavIconFallback {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.sourceFavIconFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.sourceText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.sourceTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourceDomain {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /*
  * The composer zone: centered in a comfortable column with no hard divider. On an empty
  * thread it sits in normal flow under the greeting; once messages exist it overlays the

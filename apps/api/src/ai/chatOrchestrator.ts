@@ -1,10 +1,17 @@
-import type { ChatMessage, ChatTurn, ChatUsage, MentionedPlayer } from '@fcm/contracts';
+import type {
+  ChatMessage,
+  ChatTurn,
+  ChatUsage,
+  CitedSource,
+  MentionedPlayer,
+} from '@fcm/contracts';
 import type { FantasyProvider } from '../fantasyProvider.js';
 import type { YahooTokens } from '../tokenStore.js';
 import type { OnTokensRefreshed } from '../yahooClient.js';
 import type { LlmMessage, LlmProvider, LlmResult, LlmToolSchema, LlmUsage } from './llmProvider.js';
 import { buildTools, ToolError, type ChatTool, type ToolContext } from './tools.js';
 import { PlayerRegistry } from './playerRegistry.js';
+import { SourceRegistry } from './sourceRegistry.js';
 import { TtlCache } from './cache.js';
 
 /** Bounds that keep token spend + latency predictable (see plan-of-record AI design).
@@ -14,6 +21,16 @@ const MAX_TOOL_ROUNDS = 6;
 const MAX_HISTORY_TURNS = 12;
 const MAX_INPUT_CHARS = 4000;
 const MAX_TOOL_RESULT_CHARS = 4000;
+
+/** Nudge appended when the model narrates a tool call as plain text instead of using the
+ *  function-calling channel (some Azure deployments degenerate into this and produce no
+ *  usable call). We drop the leaked text and ask it to call the tool properly or answer. */
+const LEAKED_TOOLCALL_NUDGE =
+  'Your previous message tried to invoke a tool by writing it as plain text, which does not ' +
+  'work and was discarded. Either call the tool through the function-calling interface, or, ' +
+  'if you already have enough information, reply now with your complete analysis in Markdown. ' +
+  'Never write raw tool-call syntax (such as "to=functions..." or "functions.web_search(...)") ' +
+  'in your reply.';
 
 /**
  * High-level co-manager persona. The goal is always insightful, realistic, grounded
@@ -28,6 +45,9 @@ export const SYSTEM_PROMPT = [
   '',
   'Operating principles:',
   '- Ground every claim in data. Call the read-only tools for rosters, standings, matchups, team/player category stats, free agents, recent league transactions (adds, drops/waivers, trades), and MLB enrichment (real season stats and recent transactions) before advising. Never invent stats, players, standings, or transactions. If data is missing, say so.',
+  '- When web_search is available, USE IT PROACTIVELY to enrich - not just to fix facts. For any question involving specific players, waiver/streamer targets, trades, buy/sell, or start/sit, run one or more web_search calls to pull the latest real-world context and fold it into your reasoning: injury/health and IL updates, role or lineup-spot changes (call-ups, demotions, closer changes, batting-order moves), the story behind a hot or cold streak, park/weather/matchup notes, and expert or beat-writer takes and rankings. Treat a quick search as the DEFAULT enrichment step whenever current information would sharpen the advice; the only time to skip it is pure in-league math (standings math, category totals). Aim to ground the key players in your answer with at least one fresh web finding.',
+  "- Your training data on MLB rosters, teams, roles, and news is STALE and often wrong (players change teams, get hurt, or shift roles after your cutoff). NEVER state a player's current MLB team, this week's sleepers, or breaking news from memory - search first. Always put the current month and year (given below) in every query (e.g. 'Jhoan Duran role news August 2026').",
+  "- Cite every web-sourced claim inline with a [[s:N]] marker (N = the result's index) right where you use it - do NOT paste raw URLs or Markdown links; the app renders numbered pills and clickable source badges from those markers. web_search does NOT replace the league tools: still call get_free_agents / get_league_rosters / get_player_value / get_player_advanced_stats for THIS league to check availability and value. If web search and the Yahoo/MLB tools disagree, trust the tools for in-league stats and trust search for current team/affiliation and news, and say which you relied on.",
   '- Be fully autonomous. Never ask the user for information you can obtain yourself with tools (team ids, rosters, standings, stats, player data, injury news). Gather what you need across as many tool calls as it takes, THEN answer. The league is already selected for you - do not ask which league.',
   "- Chain tools when one result feeds the next. To analyze the user's own team, first call get_league_rosters (or get_league_standings) and match the user's team name to its teamId, then call get_team_stats with that teamId. Never stop to ask the user for a teamId - look it up.",
   '- For saves/holds: before recommending any reliever for saves (SV, SV+H) or holds (HD), call get_bullpen_roles for that pitcher\'s MLB team and recommend the arm actually getting the chances (the derived closer/setup). Only call someone "the closer" when the usage supports it, and flag committees/unsettled situations instead of guessing.',
@@ -65,6 +85,7 @@ export const SYSTEM_PROMPT = [
   '- Is the role secure (everyday lineup spot, top-of-order ABs, rotation slot, the 9th-inning job)? Playing time is often the biggest value driver.',
   '- What does recent form (last7/last30) say versus the season line - improving, regressing, steady? Is a hot streak real or variance?',
   '- What is the surrounding context (lineup, park, matchup, IL/DTD status) and how does it affect near-term expectations?',
+  "- What does the LATEST real-world reporting say (web_search)? Any injury update, role change, call-up, or beat-writer note that the in-league numbers can't show yet? Weave the freshest findings in and cite them.",
   "- What is the player's value above replacement at their position versus what's freely available on waivers?",
   '',
   "Always tie advice back to this specific team's categories, needs, and situation. If a tool returns no match or missing data, say so plainly instead of guessing.",
@@ -116,6 +137,8 @@ export interface ChatResult {
   usage?: ChatUsage;
   /** Players the reply featured (via [[p:Name]] tags), resolved to Yahoo player identities. */
   playersMentioned?: MentionedPlayer[];
+  /** Web articles the reply cited (via [[s:N]] tags + web_search), for clickable badges. */
+  sourcesCited?: CitedSource[];
 }
 
 /** Matches a player tag the model emits: [[p:Full Name]]. */
@@ -229,6 +252,42 @@ export function stripLeakedToolJson(content: string): string {
     .trim();
 }
 
+/**
+ * Markers of a tool call the model leaked as plain text instead of using the structured
+ * function-calling channel: OpenAI "harmony" routing (`to=functions.name`), special channel
+ * tokens (`<|call|>`, `<|channel|>`), or a bare `functions.<tool>(` narration. Certain Azure
+ * deployments occasionally emit these (and then degenerate into garbage tokens), so we detect
+ * and strip them rather than surfacing the plumbing as an answer.
+ */
+const LEAKED_TOOLCALL_RE =
+  /to=functions\.[a-z0-9_]+|functions\.(?:web_search|get_[a-z0-9_]+)\s*[({]|<\|(?:channel|call|start|message|constrain|end|recipient)\|>/i;
+
+/** True when the content looks like a leaked/aborted tool-call attempt (not a real answer). */
+export function looksLikeLeakedToolCall(content: string): boolean {
+  return LEAKED_TOOLCALL_RE.test(content);
+}
+
+/**
+ * Cut a leaked tool-call fragment (and any degenerate tail after it) from the reply so the
+ * raw plumbing never reaches the user. Removes everything from the first marker to the end of
+ * its line, then tidies a dangling connector left behind (e.g. "Searching web for X...").
+ */
+export function stripLeakedToolSyntax(content: string): string {
+  const match = LEAKED_TOOLCALL_RE.exec(content);
+  if (!match) return content;
+  const lineEnd = content.indexOf('\n', match.index);
+  const tailRemoved =
+    lineEnd === -1
+      ? content.slice(0, match.index)
+      : content.slice(0, match.index) + content.slice(lineEnd);
+  // Drop a dangling "Searching ...___..." connector the model left before the leak, then trim
+  // trailing whitespace only - never a legitimate sentence-ending period.
+  return tailRemoved
+    .replace(/\s*Searching\b[^.\n]*\.{2,}\s*$/u, '')
+    .replace(/\s+$/u, '')
+    .trim();
+}
+
 function toSchema(tool: ChatTool): LlmToolSchema {
   return { name: tool.name, description: tool.description, parameters: tool.parameters };
 }
@@ -263,6 +322,21 @@ function addUsage(total: ChatUsage | undefined, next: LlmUsage | undefined): Cha
  * "my team"/"I"/"me" as this team and never asks who the user is. Derived from what the
  * authenticated UI already knows (the selected league + the user's team in it).
  */
+/**
+ * Today's date, so the co-manager anchors "this week", freshness, and web_search queries to
+ * the present rather than its (stale) training cutoff. Without this the model reflexively
+ * searches for last year's data.
+ */
+function dateContext(now: Date = new Date()): string {
+  const formatted = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  return `Today's date is ${formatted}. Treat this as the current date for "this week", freshness, and any web_search queries (use the current month and year).`;
+}
+
 function userContext(params: RunChatParams): string {
   const team = params.teamName ? `the fantasy team "${params.teamName}"` : 'their fantasy team';
   const league = params.leagueName ? ` in the league "${params.leagueName}"` : '';
@@ -283,19 +357,28 @@ function finalMessage(content: string): ChatMessage {
   };
 }
 
-/** Assemble the final result: strip player tags from the text and resolve them to identities. */
+/**
+ * Assemble the final result: strip leaked tool JSON and player tags from the text (the
+ * [[s:N]] citation markers are intentionally KEPT so the client can render inline pills),
+ * resolve tagged players to identities, and attach the web sources the tools consulted.
+ */
 function buildResult(
   rawContent: string,
   toolsUsed: Set<string>,
   usage: ChatUsage | undefined,
   registry: PlayerRegistry,
+  sources: SourceRegistry,
 ): ChatResult {
   const players = registry.resolve(extractMentionNames(rawContent));
+  const cited = sources.list();
   return {
-    message: finalMessage(stripMentionMarkers(stripLeakedToolJson(rawContent))),
+    message: finalMessage(
+      stripMentionMarkers(stripLeakedToolSyntax(stripLeakedToolJson(rawContent))),
+    ),
     toolsUsed: [...toolsUsed],
     ...(usage ? { usage } : {}),
     ...(players.length > 0 ? { playersMentioned: players } : {}),
+    ...(cited.length > 0 ? { sourcesCited: cited } : {}),
   };
 }
 
@@ -312,11 +395,13 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
   const toolSchemas = tools.map(toSchema);
 
   const registry = new PlayerRegistry();
+  const sources = new SourceRegistry();
   const ctx: ToolContext = {
     provider: params.provider,
     tokens: params.tokens,
     cache,
     registry,
+    sources,
     ...(params.leagueId ? { leagueId: params.leagueId } : {}),
     ...(params.onTokensRefreshed ? { onTokensRefreshed: params.onTokensRefreshed } : {}),
   };
@@ -324,6 +409,7 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
   const history = params.messages.slice(-MAX_HISTORY_TURNS);
   const messages: LlmMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: dateContext() },
     ...(params.teamName || params.leagueName
       ? [{ role: 'system' as const, content: userContext(params) }]
       : []),
@@ -347,7 +433,17 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
     usage = addUsage(usage, result.usage);
 
     if (result.toolCalls.length === 0) {
-      return buildResult(result.content, toolsUsed, usage, registry);
+      // The model narrated a tool call as plain text (harmony/garbled) but produced no usable
+      // call. Don't surface the plumbing: drop the leaked preamble and nudge it to call the
+      // tool properly or answer. Retry with tools if rounds remain; otherwise break to the
+      // forced tool-less final answer below, so the turn always finishes with real prose.
+      if (looksLikeLeakedToolCall(result.content)) {
+        params.onResetAssistant?.();
+        messages.push({ role: 'system', content: LEAKED_TOOLCALL_NUDGE });
+        if (round < MAX_TOOL_ROUNDS - 1) continue;
+        break;
+      }
+      return buildResult(result.content, toolsUsed, usage, registry, sources);
     }
 
     // This completion was a tool step, not the answer, so drop any preamble text it streamed.
@@ -396,5 +492,5 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
   // Rounds exhausted: force a final text answer with tools disabled (streamed when supported).
   const finalRes = await runCompletion([]);
   usage = addUsage(usage, finalRes.usage);
-  return buildResult(finalRes.content, toolsUsed, usage, registry);
+  return buildResult(finalRes.content, toolsUsed, usage, registry, sources);
 }

@@ -48,4 +48,7 @@ export const TTL = {
   advanced: 60 * 60 * 1000,
   /** Bullpen roles shift week to week; refresh a few times a day. */
   bullpen: 6 * 60 * 60 * 1000,
+  /** Web search results are for "current" context; short so news stays reasonably fresh
+   *  while identical queries within a chat still hit cache. */
+  webSearch: 10 * 60 * 1000,
 } as const;

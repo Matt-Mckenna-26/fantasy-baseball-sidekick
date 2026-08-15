@@ -1,4 +1,10 @@
-import type { LlmMessage, LlmProvider, LlmResult, LlmToolCall, LlmToolSchema } from './llmProvider.js';
+import type {
+  LlmMessage,
+  LlmProvider,
+  LlmResult,
+  LlmToolCall,
+  LlmToolSchema,
+} from './llmProvider.js';
 
 /**
  * Deterministic, offline LLM provider. It does NOT reason - it routes the latest user
@@ -17,11 +23,44 @@ interface Rule {
 // Order matters: earlier rules win. Every referenced tool is optional - only those
 // actually registered (passed in `tools`) are emitted.
 const RULES: Rule[] = [
-  { test: /trade/, calls: [{ name: 'get_league_rosters', args: {} }, { name: 'get_league_team_stats', args: {} }] },
-  { test: /(playoff|standing|make it|clinch)/, calls: [{ name: 'get_league_standings', args: {} }, { name: 'get_matchups', args: {} }] },
-  { test: /(categor|target|improve|climb)/, calls: [{ name: 'get_league_team_stats', args: {} }, { name: 'get_league_standings', args: {} }] },
-  { test: /(free agent|waiver|pick ?up|unrostered|add|streaming|stream)/, calls: [{ name: 'get_free_agents', args: { range: 'last30' } }] },
-  { test: /(drop|cut|bench|who should i start|start)/, calls: [{ name: 'get_league_rosters', args: {} }] },
+  // Current-web questions route to web_search first (only fires when the tool is registered,
+  // i.e. an Exa key is set); the free-agent scan then grounds any names in this league.
+  {
+    test: /(sleeper|bust|breakout|streamer|current team|which team|what team|who (?:does|do) .+ play for|latest news|rumor|signing|traded|call-?up)/,
+    calls: [
+      { name: 'web_search', args: { query: 'fantasy baseball sleepers this week' } },
+      { name: 'get_free_agents', args: { range: 'last30' } },
+    ],
+  },
+  {
+    test: /trade/,
+    calls: [
+      { name: 'get_league_rosters', args: {} },
+      { name: 'get_league_team_stats', args: {} },
+    ],
+  },
+  {
+    test: /(playoff|standing|make it|clinch)/,
+    calls: [
+      { name: 'get_league_standings', args: {} },
+      { name: 'get_matchups', args: {} },
+    ],
+  },
+  {
+    test: /(categor|target|improve|climb)/,
+    calls: [
+      { name: 'get_league_team_stats', args: {} },
+      { name: 'get_league_standings', args: {} },
+    ],
+  },
+  {
+    test: /(free agent|waiver|pick ?up|unrostered|add|streaming|stream)/,
+    calls: [{ name: 'get_free_agents', args: { range: 'last30' } }],
+  },
+  {
+    test: /(drop|cut|bench|who should i start|start)/,
+    calls: [{ name: 'get_league_rosters', args: {} }],
+  },
   { test: /(matchup|opponent|this week)/, calls: [{ name: 'get_matchups', args: {} }] },
 ];
 
@@ -54,6 +93,19 @@ function factFrom(content: string): string | undefined {
   return undefined;
 }
 
+/** Detect a web_search result payload and return its lowest citation index, if any. */
+function sourceIndexFrom(content: string): number | undefined {
+  try {
+    const data = JSON.parse(content) as { results?: { index?: number; url?: string }[] };
+    const first = Array.isArray(data.results)
+      ? data.results.find((r) => typeof r.index === 'number' && typeof r.url === 'string')
+      : undefined;
+    return first?.index;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Collect a few player names from tool-result payloads so the mock can tag them ([[p:Name]]). */
 function playerNamesFrom(content: string): string[] {
   try {
@@ -76,13 +128,25 @@ export class MockLlmProvider implements LlmProvider {
 
     // Phase 2: results are in - summarize deterministically and finish (no more calls).
     if (toolResults.length > 0) {
-      const facts = toolResults.map((m) => factFrom(m.content)).filter((f): f is string => Boolean(f));
+      const facts = toolResults
+        .map((m) => factFrom(m.content))
+        .filter((f): f is string => Boolean(f));
       const detail = facts.length > 0 ? ` Notably, ${facts.join('; ')}.` : '';
       // Tag up to 3 unique players so the client renders their rank cards.
-      const names = [...new Set(toolResults.flatMap((m) => playerNamesFrom(m.content)))].slice(0, 3);
-      const watch = names.length > 0 ? ` Keep an eye on ${names.map((n) => `[[p:${n}]]`).join(', ')}.` : '';
+      const names = [...new Set(toolResults.flatMap((m) => playerNamesFrom(m.content)))].slice(
+        0,
+        3,
+      );
+      const watch =
+        names.length > 0 ? ` Keep an eye on ${names.map((n) => `[[p:${n}]]`).join(', ')}.` : '';
+      // Cite the first web source (if any) so the client renders a citation pill + badge.
+      const srcIdx = toolResults
+        .map((m) => sourceIndexFrom(m.content))
+        .find((i) => i !== undefined);
+      const cite =
+        srcIdx !== undefined ? ` Per recent reporting[[s:${srcIdx}]], watch the wire.` : '';
       const content =
-        `Here's my read based on your league data.${detail}${watch} This is analysis only - ` +
+        `Here's my read based on your league data.${detail}${watch}${cite} This is analysis only - ` +
         `make any moves in Yahoo yourself. Ask a follow-up for a deeper dive on a player or category.`;
       return Promise.resolve({ content, toolCalls: [] });
     }
@@ -95,7 +159,7 @@ export class MockLlmProvider implements LlmProvider {
     if (planned.length === 0) {
       return Promise.resolve({
         content:
-          "I can help with your roster, standings, matchups, trades, and waiver targets once " +
+          'I can help with your roster, standings, matchups, trades, and waiver targets once ' +
           'a league is selected. What would you like to dig into?',
         toolCalls: [],
       });

@@ -796,16 +796,34 @@ export const mentionedPlayerSchema = z.object({
 export type MentionedPlayer = z.infer<typeof mentionedPlayerSchema>;
 
 /**
+ * A web article the co-manager cited via the read-only `web_search` tool. The server
+ * collects the (HTTPS-only) results the tool returned this turn and assigns each a stable
+ * 1-based `index` that matches the `[[s:N]]` markers in the reply, so the client can render
+ * ChatGPT-style clickable source badges (and inline numbered pills) that open the article in
+ * a new tab. UI-only, optional.
+ */
+export const citedSourceSchema = z.object({
+  index: z.number().int().positive(),
+  title: z.string(),
+  url: z.string().url(),
+  domain: z.string(),
+  publishedDate: z.string().optional(),
+});
+export type CitedSource = z.infer<typeof citedSourceSchema>;
+
+/**
  * Response for POST /api/chat - the assistant's reply. `toolsUsed` and `usage` are
  * optional observability fields (which read-only tools the co-manager called and the
  * token spend for the turn); clients may surface or ignore them. `playersMentioned`
- * lists the players the reply featured so the UI can render rank cards for them.
+ * lists the players the reply featured so the UI can render rank cards for them, and
+ * `sourcesCited` lists the web articles behind any `web_search`-grounded claims.
  */
 export const chatResponseSchema = z.object({
   message: chatMessageSchema,
   toolsUsed: z.array(z.string()).optional(),
   usage: chatUsageSchema.optional(),
   playersMentioned: z.array(mentionedPlayerSchema).optional(),
+  sourcesCited: z.array(citedSourceSchema).optional(),
 });
 export type ChatResponse = z.infer<typeof chatResponseSchema>;
 

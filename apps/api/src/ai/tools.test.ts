@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MockFantasyProvider } from '../fantasyProvider.mock.js';
 import type { YahooTokens } from '../tokenStore.js';
+import type { WebSearch } from '../exaClient.js';
 import { buildTools, ToolError, type ToolContext } from './tools.js';
+import { SourceRegistry } from './sourceRegistry.js';
 import { TtlCache } from './cache.js';
 
 const tokens: YahooTokens = { accessToken: 'a', refreshToken: 'r' };
@@ -25,17 +27,21 @@ describe('chat tools', () => {
   });
 
   it('Yahoo tools deny when no league is selected', async () => {
-    await expect(byName.get('get_league_standings')!.run({}, ctx())).rejects.toBeInstanceOf(ToolError);
-  });
-
-  it('Yahoo tools deny leagues outside the closed beta', async () => {
-    await expect(byName.get('get_league_standings')!.run({}, ctx('469.l.999999'))).rejects.toBeInstanceOf(
+    await expect(byName.get('get_league_standings')!.run({}, ctx())).rejects.toBeInstanceOf(
       ToolError,
     );
   });
 
+  it('Yahoo tools deny leagues outside the closed beta', async () => {
+    await expect(
+      byName.get('get_league_standings')!.run({}, ctx('469.l.999999')),
+    ).rejects.toBeInstanceOf(ToolError);
+  });
+
   it('get_free_agents returns a compact snapshot for an allowed league', async () => {
-    const out = (await byName.get('get_free_agents')!.run({ range: 'last30' }, ctx('469.l.101214'))) as {
+    const out = (await byName
+      .get('get_free_agents')!
+      .run({ range: 'last30' }, ctx('469.l.101214'))) as {
       range: string;
       batting: unknown[];
     };
@@ -44,7 +50,9 @@ describe('chat tools', () => {
   });
 
   it('get_recent_transactions returns a compact snapshot for an allowed league', async () => {
-    const out = (await byName.get('get_recent_transactions')!.run({ count: 3 }, ctx('469.l.101214'))) as {
+    const out = (await byName
+      .get('get_recent_transactions')!
+      .run({ count: 3 }, ctx('469.l.101214'))) as {
       transactions: unknown[];
     };
     expect(Array.isArray(out.transactions)).toBe(true);
@@ -76,12 +84,12 @@ describe('chat tools', () => {
 
   it('get_player_value requires at least one name and needs a league', async () => {
     expect(byName.get('get_player_value')?.needsLeague).toBe(true);
-    await expect(byName.get('get_player_value')!.run({ names: [] }, ctx('469.l.101214'))).rejects.toBeInstanceOf(
-      ToolError,
-    );
-    await expect(byName.get('get_player_value')!.run({ names: ['x'] }, ctx())).rejects.toBeInstanceOf(
-      ToolError,
-    );
+    await expect(
+      byName.get('get_player_value')!.run({ names: [] }, ctx('469.l.101214')),
+    ).rejects.toBeInstanceOf(ToolError);
+    await expect(
+      byName.get('get_player_value')!.run({ names: ['x'] }, ctx()),
+    ).rejects.toBeInstanceOf(ToolError);
   });
 
   it('get_player_value returns Value+ lines for matched players and lists unmatched names', async () => {
@@ -135,9 +143,88 @@ describe('chat tools', () => {
         return Reflect.get(target, prop, receiver);
       },
     });
-    const context: ToolContext = { provider: spied, tokens, cache: new TtlCache(), leagueId: '469.l.101214' };
+    const context: ToolContext = {
+      provider: spied,
+      tokens,
+      cache: new TtlCache(),
+      leagueId: '469.l.101214',
+    };
     await byName.get('get_league_standings')!.run({}, context);
     await byName.get('get_league_standings')!.run({}, context);
     expect(calls).toBe(1);
+  });
+});
+
+describe('web_search tool', () => {
+  const snapshot = {
+    query: 'fantasy baseball sleepers August 2026',
+    results: [
+      {
+        title: 'Sleepers',
+        url: 'https://espn.com/sleepers',
+        publishedDate: '2026-08-10',
+        highlights: ['buy low'],
+      },
+    ],
+  };
+
+  function ctxWithSources(): ToolContext & { sources: SourceRegistry } {
+    return {
+      provider: new MockFantasyProvider(),
+      tokens,
+      cache: new TtlCache(),
+      sources: new SourceRegistry(),
+    };
+  }
+
+  it('is omitted entirely when no web search dependency is configured', () => {
+    const names = new Set(buildTools().map((t) => t.name));
+    expect(names.has('web_search')).toBe(false);
+  });
+
+  it('is offered (no league needed) when a web search dependency is injected', () => {
+    const webSearch: WebSearch = vi.fn(async () => snapshot);
+    const tool = buildTools({ webSearch }).find((t) => t.name === 'web_search');
+    expect(tool).toBeDefined();
+    expect(tool!.needsLeague).toBe(false);
+  });
+
+  it('requires a query', async () => {
+    const webSearch: WebSearch = vi.fn(async () => snapshot);
+    const tool = buildTools({ webSearch }).find((t) => t.name === 'web_search')!;
+    await expect(tool.run({}, ctxWithSources())).rejects.toBeInstanceOf(ToolError);
+  });
+
+  it('calls the injected search, records sources with citation indexes, and caches repeats', async () => {
+    const webSearch = vi.fn(async () => snapshot);
+    const tool = buildTools({ webSearch }).find((t) => t.name === 'web_search')!;
+    const ctx = ctxWithSources();
+
+    const out = (await tool.run({ query: snapshot.query }, ctx)) as {
+      results: { index: number; url: string }[];
+    };
+    expect(webSearch).toHaveBeenCalledTimes(1);
+    expect(out.results[0]).toMatchObject({ index: 1, url: 'https://espn.com/sleepers' });
+    expect(ctx.sources.list()).toEqual([
+      {
+        index: 1,
+        title: 'Sleepers',
+        url: 'https://espn.com/sleepers',
+        domain: 'espn.com',
+        publishedDate: '2026-08-10',
+      },
+    ]);
+
+    // Identical query within the turn is served from cache (no second Exa call).
+    await tool.run({ query: snapshot.query }, ctx);
+    expect(webSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a clean ToolError (not the raw Exa error) when search fails', async () => {
+    const webSearch: WebSearch = vi.fn(async () => {
+      throw new Error('boom secret-key leak');
+    });
+    const tool = buildTools({ webSearch }).find((t) => t.name === 'web_search')!;
+    await expect(tool.run({ query: 'x' }, ctxWithSources())).rejects.toBeInstanceOf(ToolError);
   });
 });

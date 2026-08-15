@@ -16,7 +16,8 @@ import {
  * Read-only client for the public MLB Stats API (statsapi.mlb.com). Used solely to
  * annotate rosters with live game state on the "Today" view - Yahoo does not expose
  * this. Requests are anonymous GETs for public data: no auth, no user data, no tokens
- * are sent (see the security rule; this is the app's only non-Yahoo outbound host).
+ * are sent (see the security rule). One of the app's non-Yahoo outbound hosts, alongside
+ * the public MLB Stats endpoints and the optional Exa web search (see exaClient.ts).
  */
 const SCHEDULE_URL = 'https://statsapi.mlb.com/api/v1/schedule';
 

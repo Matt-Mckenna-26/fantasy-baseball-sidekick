@@ -14,6 +14,8 @@ import { asyncHandler, sendError } from '../http.js';
 import { isLeagueAllowed } from '../closedBeta.js';
 import { createLlmProvider } from '../ai/llmProvider.js';
 import { runChat } from '../ai/chatOrchestrator.js';
+import { buildTools } from '../ai/tools.js';
+import { createExaSearch } from '../exaClient.js';
 
 /**
  * AI co-manager chat. Authenticated (needs the session's Yahoo tokens so the tools can
@@ -32,6 +34,11 @@ export function createChatRouter(
   provider: FantasyProvider,
 ): Router {
   const llm = createLlmProvider(config);
+  // Offer the read-only web_search tool only when an Exa key is configured. Built once
+  // (the tools are pure/stateless) and reused across requests.
+  const tools = config.exaApiKey
+    ? buildTools({ webSearch: createExaSearch(config.exaApiKey) })
+    : buildTools();
   const router = Router();
 
   router.post(
@@ -39,7 +46,11 @@ export function createChatRouter(
     asyncHandler(async (req, res) => {
       // Refresh proactively (single-flight) so the tool loop's Yahoo reads start with a
       // valid token instead of racing per-call refreshes mid-stream.
-      const tokens = await ensureFreshTokens({ sessionId: req.sessionID, store: tokenStore, config });
+      const tokens = await ensureFreshTokens({
+        sessionId: req.sessionID,
+        store: tokenStore,
+        config,
+      });
       if (!tokens) {
         sendError(res, 401, 'unauthorized', 'Connect your Yahoo account first.');
         return;
@@ -70,6 +81,7 @@ export function createChatRouter(
           tokens,
           provider,
           llm,
+          tools,
           ...(leagueId ? { leagueId } : {}),
           ...(teamName ? { teamName } : {}),
           ...(leagueName ? { leagueName } : {}),
@@ -88,13 +100,19 @@ export function createChatRouter(
             ...(result.playersMentioned && result.playersMentioned.length > 0
               ? { playersMentioned: result.playersMentioned }
               : {}),
+            ...(result.sourcesCited && result.sourcesCited.length > 0
+              ? { sourcesCited: result.sourcesCited }
+              : {}),
           }),
         );
         res.end();
       } catch (err) {
         // Headers are already sent, so we can't fall back to a JSON error status; surface
         // the failure as a stream event and log the detail server-side.
-        console.error('Chat stream failed:', err instanceof Error ? (err.stack ?? err.message) : err);
+        console.error(
+          'Chat stream failed:',
+          err instanceof Error ? (err.stack ?? err.message) : err,
+        );
         write({ type: 'error', code: 'internal_error', message: 'Something went wrong.' });
         res.end();
       }

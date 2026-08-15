@@ -5,13 +5,19 @@ import {
   useAuiState,
 } from '@assistant-ui/react';
 import { useEffect, useRef, useState } from 'react';
-import type { MentionedPlayer } from '@fcm/contracts';
+import type { CitedSource, MentionedPlayer } from '@fcm/contracts';
 import { Markdown } from '../components/Markdown';
 import { MentionedPlayers } from '../components/MentionedPlayers';
 import { useSession } from '../context/SessionContext';
 import { previewChatSuggestions } from '../fixtures/preview';
 import { useChatControls, useChatFooter } from './ChatRuntimeProvider';
-import { ActivityRow, ToolActivityFallback, ToolActivityGroup } from './ToolActivityCard';
+import {
+  ActivityRow,
+  ToolActivityFallback,
+  ToolActivityGroup,
+  WebSearchToolCard,
+} from './ToolActivityCard';
+import { SourceBadges } from './SourceBadges';
 import styles from './chat.module.css';
 
 function SendIcon() {
@@ -88,13 +94,19 @@ function UserText({ text }: { text: string }) {
 }
 
 /** Assistant text: Markdown prose, but nothing while the reply has not started streaming
- *  (so no empty bubble flashes before the first token). */
+ *  (so no empty bubble flashes before the first token). Inline [[s:N]] citation markers are
+ *  rendered as numbered pills that link to the cited article (see Markdown `citations`). */
 function AssistantText({ text }: { text: string }) {
+  const sources = useAuiState(
+    (s) => s.message.metadata.custom.sourcesCited as CitedSource[] | undefined,
+  );
   if (!text.trim()) return null;
   return (
     <div className={styles.assistantBlock}>
       <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-        <Markdown className={styles.prose}>{text}</Markdown>
+        <Markdown className={styles.prose} {...(sources?.length ? { citations: sources } : {})}>
+          {text}
+        </Markdown>
       </div>
       <CopyButton text={text} />
     </div>
@@ -134,6 +146,15 @@ function MentionedFooter() {
   return <MentionedPlayers players={players} pool={pool} onAnalyze={onAnalyze} />;
 }
 
+/** "Sources" badges under a reply that used web_search, fed by the resolved citation list. */
+function SourcesFooter() {
+  const sources = useAuiState(
+    (s) => s.message.metadata.custom.sourcesCited as CitedSource[] | undefined,
+  );
+  if (!sources || sources.length === 0) return null;
+  return <SourceBadges sources={sources} />;
+}
+
 /** Retry control under a failed assistant turn. */
 function FailedRetry() {
   const failed = useAuiState((s) => s.message.metadata.custom.failed === true);
@@ -141,12 +162,7 @@ function FailedRetry() {
   const { retry, busy } = useChatControls();
   if (!failed) return null;
   return (
-    <button
-      type="button"
-      className={styles.retryButton}
-      onClick={() => retry(id)}
-      disabled={busy}
-    >
+    <button type="button" className={styles.retryButton} onClick={() => retry(id)} disabled={busy}>
       Try again
     </button>
   );
@@ -159,12 +175,13 @@ function AssistantMessage() {
         <MessagePrimitive.Parts
           components={{
             Text: AssistantText,
-            tools: { Fallback: ToolActivityFallback },
+            tools: { Fallback: ToolActivityFallback, by_name: { web_search: WebSearchToolCard } },
             ToolGroup: ToolActivityGroup,
           }}
         />
         <ComposingRow />
         <FailedRetry />
+        <SourcesFooter />
         <MentionedFooter />
       </div>
     </MessagePrimitive.Root>

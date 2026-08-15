@@ -107,6 +107,25 @@ The LLM provider is chosen by `CHAT_PROVIDER`:
   league data.
 - `azure`: real Azure OpenAI (gpt-4o-mini). Requires the `AZURE_OPENAI_*` env vars.
 
+### Web search (optional, grounds "current" facts)
+
+Set `EXA_API_KEY` (from [Exa](https://dashboard.exa.ai/api-keys)) to give the co-manager a
+read-only `web_search` tool. The model's training data on MLB rosters, roles, and news goes
+stale (a player may have changed teams since its cutoff), so a simple web search fixes the
+kind of mistake an LLM can't reason its way out of - e.g. "Does Pete Alonso still play for
+the Mets?" or "What are some fantasy baseball sleepers this week?". The bot's own date is
+injected into the prompt so it queries the current month/year, then it still calls the Yahoo
+tools to check availability and value in *your* league. Web search is only offered when the
+key is set; omit it to disable the tool entirely. It's independent of `CHAT_PROVIDER`, so it
+works with either the `mock` or `azure` bot. In production, add `EXA_API_KEY` as a Container
+App **secret** (see "Production environment variables" below).
+
+Cited articles surface in the chat as ChatGPT-style **source badges** under the reply
+(favicon + title + hostname) and as inline numbered pills next to the claim. Both are plain
+links that open the article in a new browser tab (`rel="noopener noreferrer"`), so the chat
+thread stays put. The article list is attached server-side from the tool's own results (the
+model never hand-types URLs), and only sources it actually returned can be rendered.
+
 ### Provision Azure OpenAI (one-time, Azure Portal)
 
 1. Create a resource group (any name, e.g. `rg-fcm-ai`) in a region that offers Azure
@@ -146,7 +165,7 @@ web bundle + API). Yahoo OAuth is the only auth; the app runs a single always-on
 
 Set these on the Container App. Mark the first group as **secrets** (never plain env):
 
-- Secrets: `YAHOO_CLIENT_SECRET`, `SESSION_SECRET`, and `AZURE_OPENAI_API_KEY` (only when `CHAT_PROVIDER=azure`).
+- Secrets: `YAHOO_CLIENT_SECRET`, `SESSION_SECRET`, `AZURE_OPENAI_API_KEY` (only when `CHAT_PROVIDER=azure`), and `EXA_API_KEY` (optional; only when enabling web search). Store each as a Container App secret and reference it from the matching env var (e.g. `EXA_API_KEY=secretref:exa-api-key`).
 - Plain: `NODE_ENV=production`, `YAHOO_CLIENT_ID`, `YAHOO_REDIRECT_URI=https://<fqdn>/auth/yahoo/callback`, `WEB_APP_URL=https://<fqdn>`, `DATA_MODE=live`, `STATS_SOURCE=yahoo`, `CHAT_PROVIDER` (+ `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION` when azure).
 
 `<fqdn>` is the Container App's `*.azurecontainerapps.io` hostname, known only after the

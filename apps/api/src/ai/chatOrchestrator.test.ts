@@ -1,8 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MockFantasyProvider } from '../fantasyProvider.mock.js';
 import type { YahooTokens } from '../tokenStore.js';
-import { runChat, stripLeakedToolJson } from './chatOrchestrator.js';
+import {
+  looksLikeLeakedToolCall,
+  runChat,
+  stripLeakedToolJson,
+  stripLeakedToolSyntax,
+} from './chatOrchestrator.js';
 import type { LlmProvider, LlmResult, LlmToolSchema } from './llmProvider.js';
+
+/** The exact kind of garbled harmony tool-call leak seen from some Azure deployments. */
+const LEAKED_TOOLCALL =
+  "I'll search for Jhoan Duran news (August 2026). Searching web for Jhoan Duran Aug 2026... " +
+  'to=functions.web_search hais_json_payloadielsRemainingBrowsingCallsAvoidLargeResponseContinuingAnyway code>';
 
 const tokens: YahooTokens = { accessToken: 'a', refreshToken: 'r' };
 const LEAGUE = '469.l.101214';
@@ -136,6 +146,47 @@ describe('runChat orchestrator', () => {
     expect(offered).not.toContain('get_league_standings');
   });
 
+  it('retries (dropping the leaked text) when the model narrates a tool call instead of calling it', async () => {
+    const llm = new ScriptedLlm([
+      // Round 1: garbled harmony tool-call leaked as text, no structured call.
+      { content: LEAKED_TOOLCALL, toolCalls: [] },
+      // Round 2 (after the nudge): a real, clean answer.
+      { content: '**Start [[p:Jhoan Duran]].** He owns the ninth inning.', toolCalls: [] },
+    ]);
+    const onResetAssistant = vi.fn();
+    const res = await runChat({
+      messages: [{ role: 'user', content: 'is duran worth starting?' }],
+      leagueId: LEAGUE,
+      tokens,
+      provider: new MockFantasyProvider(),
+      llm,
+      onResetAssistant,
+    });
+    // The turn finishes with the real analysis, not the leaked plumbing.
+    expect(res.message.content).toBe('**Start Jhoan Duran.** He owns the ninth inning.');
+    expect(res.message.content).not.toContain('to=functions');
+    // The streamed leaked preamble was discarded on the client.
+    expect(onResetAssistant).toHaveBeenCalled();
+  });
+
+  it('sanitizes a leaked tool-call tail if it survives into the final answer', async () => {
+    // Model keeps leaking every round; the forced tool-less final answer still carries a tail.
+    const alwaysLeaks: LlmProvider = {
+      complete: () =>
+        Promise.resolve({ content: `Here is my read. ${LEAKED_TOOLCALL}`, toolCalls: [] }),
+    };
+    const res = await runChat({
+      messages: [{ role: 'user', content: 'sleepers?' }],
+      leagueId: LEAGUE,
+      tokens,
+      provider: new MockFantasyProvider(),
+      llm: alwaysLeaks,
+    });
+    expect(res.message.content).not.toContain('to=functions');
+    expect(res.message.content).not.toContain('code>');
+    expect(res.message.content).toContain('Here is my read.');
+  });
+
   it('strips tool-call/result JSON the model narrates as plain text in the final answer', async () => {
     const leaked =
       'Calling player Value+ for candidates from your roster. ' +
@@ -181,5 +232,27 @@ describe('stripLeakedToolJson', () => {
   it('does not treat markdown links or simple arrays as JSON', () => {
     const text = 'See [the docs](http://x) and pick [1, 2, 3] of them.';
     expect(stripLeakedToolJson(text)).toBe(text);
+  });
+});
+
+describe('leaked tool-call detection and sanitizing', () => {
+  it('flags harmony/plain-text tool-call leaks but not ordinary prose', () => {
+    expect(looksLikeLeakedToolCall(LEAKED_TOOLCALL)).toBe(true);
+    expect(looksLikeLeakedToolCall('Calling functions.web_search({"query":"x"})')).toBe(true);
+    expect(looksLikeLeakedToolCall('<|channel|>commentary')).toBe(true);
+    // Ordinary answers that merely mention web search must not trip the detector.
+    expect(looksLikeLeakedToolCall('I used web search to confirm his team.')).toBe(false);
+    expect(looksLikeLeakedToolCall('**Start Jhoan Duran.** He owns the ninth.')).toBe(false);
+  });
+
+  it('cuts the leaked fragment (and garbled tail) while keeping the real prose before it', () => {
+    expect(stripLeakedToolSyntax('Here is my read. to=functions.web_search {q} code>')).toBe(
+      'Here is my read.',
+    );
+    // The full harmony leak (with its own "Searching..." connector) is removed down to the prose.
+    expect(stripLeakedToolSyntax(`My analysis stands. ${LEAKED_TOOLCALL}`)).not.toContain(
+      'to=functions',
+    );
+    expect(stripLeakedToolSyntax('Clean answer, no leak.')).toBe('Clean answer, no leak.');
   });
 });

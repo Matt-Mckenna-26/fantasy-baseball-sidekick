@@ -15,9 +15,13 @@ export const TOOL_LABELS: Record<string, string> = {
   get_league_player_stats: 'Benchmarking players',
   get_player_value: 'Scoring player value (Value+)',
   get_free_agents: 'Scanning the waiver wire',
+  get_recent_transactions: 'Reviewing recent transactions',
   get_player_mlb_stats: 'Looking up MLB stats',
+  get_player_advanced_stats: 'Checking expected stats',
+  get_bullpen_roles: 'Mapping the bullpen',
   get_player_news: 'Checking injury news',
   get_probable_starters: 'Checking probable starters',
+  web_search: 'Searching the web',
 };
 
 export function toolLabel(name: string): string {
@@ -238,6 +242,65 @@ export function ToolActivityFallback({
         ) : null}
       </div>
     </details>
+  );
+}
+
+/** Pull the query string out of the web_search tool's argsText (JSON `{ query }`). */
+function parseSearchQuery(argsText: string | undefined): string | undefined {
+  if (!argsText?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(argsText) as { query?: unknown };
+    return typeof parsed.query === 'string' && parsed.query.trim() !== ''
+      ? parsed.query.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Count the results in the web_search output (JSON `{ results: [...] }`), if parseable. */
+function parseResultCount(output: string | undefined): number | undefined {
+  if (!output?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(output) as { results?: unknown };
+    return Array.isArray(parsed.results) ? parsed.results.length : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Dedicated activity bubble for the web_search step: "Searching the web" with the actual
+ * query as a muted subtitle while it runs, then a short "found N sources" note once done.
+ * The clickable citation badges live on the reply itself (see SourceBadges), so this card
+ * stays a lightweight status line rather than a second place to click through.
+ */
+export function WebSearchToolCard({ status, isError, argsText, result }: ToolCallMessagePartProps) {
+  const running = status.type === 'running' || status.type === 'requires-action';
+  const state: RowState = running ? 'loading' : isError ? 'failed' : 'done';
+  const query = parseSearchQuery(argsText);
+  const count = running
+    ? undefined
+    : parseResultCount((result as { output?: string } | undefined)?.output);
+
+  return (
+    <div className={`${styles.toolBubble} ${running ? styles.toolBubbleActive : ''}`}>
+      <div className={styles.toolBubbleHead}>
+        <ActivityStatusIcon state={state} />
+        <VerbLabel label={TOOL_LABELS.web_search ?? 'Searching the web'} active={running} />
+        {running ? <RunningDots /> : null}
+      </div>
+      {query ? (
+        <div className={styles.searchMeta}>
+          <span className={styles.searchQuery}>&ldquo;{query}&rdquo;</span>
+          {count !== undefined ? (
+            <span className={styles.searchCount}>
+              {count} source{count === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

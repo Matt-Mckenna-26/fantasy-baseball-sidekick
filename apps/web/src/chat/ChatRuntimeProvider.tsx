@@ -15,7 +15,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { ChatMessage, ChatTurn, MentionedPlayer } from '@fcm/contracts';
+import type { ChatMessage, ChatTurn, CitedSource, MentionedPlayer } from '@fcm/contracts';
 import { sendChatMessage } from '../api/client';
 import { useSession } from '../context/SessionContext';
 import { useLeagueStatPool, type LeagueStatPool } from '../hooks/useLeagueStatPool';
@@ -41,6 +41,8 @@ export interface ToolActivity {
  */
 export type ChatEntry = ChatMessage & {
   playersMentioned?: MentionedPlayer[];
+  /** Web articles the reply cited (via [[s:N]]), for clickable citation badges/pills. */
+  sourcesCited?: CitedSource[];
   toolActivity?: ToolActivity[];
   /** True when this assistant turn failed and can be retried. */
   failed?: boolean;
@@ -214,6 +216,7 @@ function convertEntry(
     metadata: {
       custom: {
         playersMentioned: entry.playersMentioned ?? [],
+        sourcesCited: entry.sourcesCited ?? [],
         composingLabel,
         failed: entry.failed === true,
       },
@@ -380,7 +383,11 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
       // (React state updates are async and would be stale when the promise resolves).
       const activity: ToolActivity[] = [];
       try {
-        const { message: reply, playersMentioned } = await sendChatMessage(
+        const {
+          message: reply,
+          playersMentioned,
+          sourcesCited,
+        } = await sendChatMessage(
           {
             messages: toTurns(history),
             leagueId,
@@ -424,6 +431,7 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
           content: reply.content,
           failed: false,
           ...(playersMentioned?.length ? { playersMentioned } : {}),
+          ...(sourcesCited?.length ? { sourcesCited } : {}),
           ...(activity.length ? { toolActivity: activity } : {}),
         });
       } catch (err) {

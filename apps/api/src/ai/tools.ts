@@ -12,7 +12,9 @@ import { enrichPlayer, getPlayerNews, getProbableStarters } from '../mlbClient.j
 import { getPlayerAdvancedStats } from '../mlbAdvanced.js';
 import { getBullpenRoles } from '../mlbBullpen.js';
 import { withSgptRank } from '../sgptRank.js';
+import type { WebSearch } from '../exaClient.js';
 import type { PlayerRegistry } from './playerRegistry.js';
+import type { SourceRegistry } from './sourceRegistry.js';
 import { TtlCache, TTL } from './cache.js';
 import {
   snapshotFreeAgents,
@@ -35,6 +37,8 @@ export interface ToolContext {
   cache: TtlCache;
   /** Collects the raw player identities each tool fetches, for post-reply mention resolution. */
   registry?: PlayerRegistry;
+  /** Collects the web articles web_search returned, for post-reply citation badges. */
+  sources?: SourceRegistry;
 }
 
 /** A read-only tool the model can call: a JSON-schema contract plus an executor. */
@@ -76,8 +80,15 @@ const rangeParam = {
   },
 };
 
+/** Optional dependencies that unlock extra tools when configured. */
+export interface ToolDeps {
+  /** When provided (Exa key set), the co-manager gains the `web_search` tool. */
+  webSearch?: WebSearch;
+}
+
 /** Build the read-only tool registry. Pure factory so tests can inspect schemas. */
-export function buildTools(): ChatTool[] {
+export function buildTools(deps: ToolDeps = {}): ChatTool[] {
+  const { webSearch } = deps;
   return [
     {
       name: 'get_league_standings',
@@ -222,7 +233,7 @@ export function buildTools(): ChatTool[] {
     {
       name: 'get_player_value',
       description:
-        'Value+ scores for specific players by name. Value+ (returned as sgptPlus / sgptRank) is a single composite index (100 = league average, higher is better) from each player\'s percentiles across the LEAGUE\'S scoring categories; sgptRank spans hitters and pitchers on ONE scale. ALWAYS call this for trades and player-vs-player value compares (including hitter vs pitcher) - Value+ is an important anchor, then explain category fit, role, form, and luck. Also use for add/drop and start/sit when overall value matters. Returns each requested player with sgptPlus, sgptRank, and their category stats; unmatched names are listed separately.',
+        "Value+ scores for specific players by name. Value+ (returned as sgptPlus / sgptRank) is a single composite index (100 = league average, higher is better) from each player's percentiles across the LEAGUE'S scoring categories; sgptRank spans hitters and pitchers on ONE scale. ALWAYS call this for trades and player-vs-player value compares (including hitter vs pitcher) - Value+ is an important anchor, then explain category fit, role, form, and luck. Also use for add/drop and start/sit when overall value matters. Returns each requested player with sgptPlus, sgptRank, and their category stats; unmatched names are listed separately.",
       parameters: {
         type: 'object',
         properties: {
@@ -470,5 +481,56 @@ export function buildTools(): ChatTool[] {
         );
       },
     },
+    // web_search is only offered when an Exa key is configured (deps.webSearch injected).
+    ...(webSearch
+      ? [
+          {
+            name: 'web_search',
+            description:
+              "Search the public web for CURRENT baseball/fantasy context the Yahoo and MLB tools can't provide: this week's sleepers/busts/streamers, a player's CURRENT MLB team, recent trades/signings, injury rumors and beat-writer news, and expert rankings. Your own training data on rosters and roles is stale - use this instead of guessing (e.g. which team a player is on now). Always put the current month and year in the query (e.g. 'fantasy baseball sleepers August 2026', 'what team does Pete Alonso play for 2026'). Do NOT use this for league standings, rosters, matchups, or scoring-category stats - those come from the Yahoo tools. Cite results in your reply with [[s:N]] using each result's `index`.",
+            parameters: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description:
+                    'Natural-language web search query. Include the current month and year for time-sensitive questions.',
+                },
+                recencyDays: {
+                  type: 'number',
+                  description:
+                    'Optional: only return results published within this many days (e.g. 14 for "this week"). Omit for the default ~9-month window.',
+                },
+              },
+              required: ['query'],
+              additionalProperties: false,
+            },
+            needsLeague: false,
+            async run(args: Record<string, unknown>, ctx: ToolContext) {
+              const query = asString(args.query);
+              if (!query) throw new ToolError('query is required for web_search.');
+              const recencyDays =
+                typeof args.recencyDays === 'number' && args.recencyDays > 0
+                  ? Math.trunc(args.recencyDays)
+                  : undefined;
+              const snapshot = await ctx.cache.wrap(
+                `web:${query.toLowerCase()}:${recencyDays ?? ''}`,
+                TTL.webSearch,
+                async () => {
+                  try {
+                    return await webSearch(query, recencyDays ? { recencyDays } : {});
+                  } catch {
+                    // Don't leak the Exa error/key to the model; surface a clean tool error.
+                    throw new ToolError('Web search is unavailable right now.');
+                  }
+                },
+              );
+              // Assign stable citation indexes and hand the model results it can cite as [[s:N]].
+              const results = ctx.sources?.add(snapshot.results) ?? snapshot.results;
+              return { query: snapshot.query, results };
+            },
+          },
+        ]
+      : []),
   ];
 }
