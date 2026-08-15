@@ -123,7 +123,10 @@ function NavLabel({ to, label }: { to: string; label: string }) {
   return <span className={styles.navLabel}>{label}</span>;
 }
 
-const guestNavItems = [{ to: '/', label: 'Home' }, ...authedNavItems];
+const guestNavItems = [
+  { to: '/', label: 'Home' },
+  ...authedNavItems.filter((item) => item.to !== '/chat'),
+];
 
 /** Data-heavy pages need the full viewport width so stat tables fit without scrolling. */
 const WIDE_MAIN_PATHS = new Set([

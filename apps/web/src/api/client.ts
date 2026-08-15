@@ -55,6 +55,12 @@ export function isUnauthorizedError(err: unknown): boolean {
   return err instanceof ApiRequestError && (err.status === 401 || err.code === 'unauthorized');
 }
 
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException
+    ? err.name === 'AbortError'
+    : err instanceof Error && err.name === 'AbortError';
+}
+
 async function getValidated<T>(
   url: string,
   parse: (data: unknown) => T,
@@ -95,6 +101,8 @@ export interface ChatStreamHandlers {
   onDelta?: (text: string) => void;
   /** Fired to discard streamed text so far (a preamble step turned into a tool call). */
   onReset?: () => void;
+  /** Abort the in-flight fetch/stream when the user hits Stop. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -112,6 +120,7 @@ export async function sendChatMessage(
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(req),
+    ...(handlers?.signal ? { signal: handlers.signal } : {}),
   });
   if (!res.ok || !res.body) {
     let code: string | undefined;
@@ -151,19 +160,27 @@ export async function sendChatMessage(
     }
   };
 
-  for (;;) {
-    const { value, done: streamDone } = await reader.read();
-    if (streamDone) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newlineIdx: number;
-    while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, newlineIdx);
-      buffer = buffer.slice(newlineIdx + 1);
-      handleLine(line);
+  try {
+    for (;;) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newlineIdx);
+        buffer = buffer.slice(newlineIdx + 1);
+        handleLine(line);
+      }
     }
+    // Flush any trailing line without a newline terminator.
+    handleLine(buffer);
+  } catch (err) {
+    if (isAbortError(err) || handlers?.signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw isAbortError(err) ? err : new DOMException('Aborted', 'AbortError');
+    }
+    throw err;
   }
-  // Flush any trailing line without a newline terminator.
-  handleLine(buffer);
 
   if (!done) {
     throw new ApiRequestError(500, 'Chat stream ended without a final message.');

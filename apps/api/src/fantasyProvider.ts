@@ -1093,8 +1093,9 @@ export class YahooFantasyProvider implements FantasyProvider {
    * One team's roster with each player's league scoring-category values over the
    * requested window. `leagueId` is the Yahoo league_key; `teamId` is the bare team
    * number. Columns come from the league's own scoring categories (batting + pitching,
-   * display-only stats dropped). Bounded to a single team: ~3 Yahoo calls (settings +
-   * roster + one batched players/stats call). Only non-sensitive counts are logged.
+   * display-only stats dropped). Bounded to a single team: settings + roster + one
+   * players/stats call per 25-player chunk (a full roster exceeds Yahoo's per-request
+   * key cap, so the keys are chunked). Only non-sensitive counts are logged.
    */
   async getTeamRangeStats(
     tokens: YahooTokens,
@@ -1130,13 +1131,17 @@ export class YahooFantasyProvider implements FantasyProvider {
       });
     }
 
-    // The library's league.players() cannot request a coverage type, so issue the raw
-    // batched call ourselves; yf.api() appends ?format=json, so pass no query string.
-    const raw = await yf.api<RawLeaguePlayersResponse>(
-      'GET',
-      leaguePlayersStatsUrl(leagueId, playerKeys, range),
+    // Yahoo caps player_keys per request (~25), and a full roster (active + bench + IL +
+    // NA) routinely exceeds that - so chunk the keys like getPlayerStats does and stitch
+    // the parsed lines back together; a single over-cap request fails. The library's
+    // league.players() cannot request a coverage type, so issue the raw call ourselves;
+    // yf.api() appends ?format=json, so pass no query string.
+    const statChunks = await Promise.all(
+      chunk(playerKeys, PLAYER_KEY_CHUNK).map((keys) =>
+        yf.api<RawLeaguePlayersResponse>('GET', leaguePlayersStatsUrl(leagueId, keys, range)),
+      ),
     );
-    const players = parseLeaguePlayersStats(raw, columns);
+    const players = statChunks.flatMap((raw) => parseLeaguePlayersStats(raw, columns));
 
     console.warn(
       `[live] team-stats: team ${teamId} range=${range} -> ${players.length} players x ${columns.length} cols`,

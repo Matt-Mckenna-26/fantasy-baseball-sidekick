@@ -815,9 +815,13 @@ export type ChatResponse = z.infer<typeof chatResponseSchema>;
 
 /**
  * A tool-activity event streamed as the co-manager works: one 'start' when a
- * read-only tool begins and one 'end' (with success) when it finishes. Only the
- * tool name crosses the wire - never arguments or league/player data - so the UI
- * can show a live "what I'm doing" card per tool without leaking anything.
+ * read-only tool begins and one 'end' (with success) when it finishes.
+ *
+ * DATA HANDLING (reviewed): to power the expandable "what I did" cards, the tool's
+ * `args` (the request the model made) and a truncated `result` (the tool's output) now
+ * cross the wire. This is the SAME authenticated user's own league data they already see
+ * in the reply - never another user's data and never tokens/secrets - but it does mean the
+ * raw tool I/O reaches the client and is persisted in the browser's chat history.
  */
 export const chatToolEventSchema = z.object({
   type: z.literal('tool'),
@@ -825,6 +829,10 @@ export const chatToolEventSchema = z.object({
   phase: z.enum(['start', 'end']),
   /** Present on 'end': whether the tool ran without error. */
   ok: z.boolean().optional(),
+  /** Present on 'start': the raw JSON arguments the model passed to the tool. */
+  args: z.string().optional(),
+  /** Present on 'end': the tool's (truncated) JSON output, for the expandable detail. */
+  result: z.string().optional(),
 });
 export type ChatToolEvent = z.infer<typeof chatToolEventSchema>;
 

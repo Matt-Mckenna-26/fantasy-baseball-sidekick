@@ -17,13 +17,10 @@ export const previewChatHistory = [
   },
 ] satisfies ChatMessage[];
 
-/** Suggested starter prompts shown on the empty chat state. */
+/** Suggested starter prompts shown on the empty chat state. Clicking one fills the composer. */
 export const previewChatSuggestions = [
-  'What areas should I focus on to climb the standings?',
-  'Which of my players are struggling and I need to keep an eye on?',
-  'Who are my best trade partners and why?',
-  'What free agents would give me some value?',
-  'Are there any buy low opportunities that would help me?',
-  'Am I trending up or down? Rate the necessity of me making a move to ensure I make the playoffs.',
-  'What teams are trending up or down?',
+  'Where should I focus to climb the standings?',
+  'Which of my players need a closer look?',
+  'Who are my best trade partners?',
+  'Which free agents would add the most value?',
 ] as const;

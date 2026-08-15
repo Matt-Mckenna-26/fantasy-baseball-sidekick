@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MockFantasyProvider } from '../fantasyProvider.mock.js';
 import type { YahooTokens } from '../tokenStore.js';
-import { runChat } from './chatOrchestrator.js';
+import { runChat, stripLeakedToolJson } from './chatOrchestrator.js';
 import type { LlmProvider, LlmResult, LlmToolSchema } from './llmProvider.js';
 
 const tokens: YahooTokens = { accessToken: 'a', refreshToken: 'r' };
@@ -40,7 +40,13 @@ describe('runChat orchestrator', () => {
       { content: '', toolCalls: [{ id: '1', name: 'get_league_standings', arguments: '{}' }] },
       { content: 'done', toolCalls: [] },
     ]);
-    const events: { name: string; phase: 'start' | 'end'; ok?: boolean }[] = [];
+    const events: {
+      name: string;
+      phase: 'start' | 'end';
+      ok?: boolean;
+      args?: string;
+      result?: string;
+    }[] = [];
     await runChat({
       messages: [{ role: 'user', content: 'standings?' }],
       leagueId: LEAGUE,
@@ -49,10 +55,12 @@ describe('runChat orchestrator', () => {
       llm,
       onToolEvent: (e) => events.push(e),
     });
-    expect(events).toEqual([
-      { name: 'get_league_standings', phase: 'start' },
-      { name: 'get_league_standings', phase: 'end', ok: true },
-    ]);
+    expect(events).toHaveLength(2);
+    // 'start' carries the model's raw args; 'end' carries the outcome plus the tool output.
+    expect(events[0]).toEqual({ name: 'get_league_standings', phase: 'start', args: '{}' });
+    expect(events[1]).toMatchObject({ name: 'get_league_standings', phase: 'end', ok: true });
+    expect(typeof events[1]?.result).toBe('string');
+    expect(events[1]?.result?.length).toBeGreaterThan(0);
   });
 
   it('feeds a ToolError back as data rather than crashing', async () => {
@@ -126,5 +134,52 @@ describe('runChat orchestrator', () => {
     const offered = llm.seenSchemas[0]!.map((s) => s.name);
     expect(offered).toContain('get_player_mlb_stats');
     expect(offered).not.toContain('get_league_standings');
+  });
+
+  it('strips tool-call/result JSON the model narrates as plain text in the final answer', async () => {
+    const leaked =
+      'Calling player Value+ for candidates from your roster. ' +
+      '{"name":"functions.get_player_value","arguments":{"names":["Roki Sasaki"],"range":"season"}} ' +
+      '{"players":[{"name":"Roki Sasaki","pos":"P","sgptPlus":126}]} ' +
+      'Yes — buy-low on **Chris Sale**.';
+    const llm = new ScriptedLlm([{ content: leaked, toolCalls: [] }]);
+    const res = await runChat({
+      messages: [{ role: 'user', content: 'trade targets?' }],
+      leagueId: LEAGUE,
+      tokens,
+      provider: new MockFantasyProvider(),
+      llm,
+    });
+    expect(res.message.content).not.toContain('"arguments"');
+    expect(res.message.content).not.toContain('"players"');
+    expect(res.message.content).toContain('Calling player Value+');
+    expect(res.message.content).toContain('buy-low on **Chris Sale**');
+  });
+});
+
+describe('stripLeakedToolJson', () => {
+  it('removes a narrated function-call payload but keeps the surrounding prose', () => {
+    const out = stripLeakedToolJson(
+      'Checking values. {"name":"functions.get_player_value","arguments":{"names":["A"]}} Here is my read.',
+    );
+    expect(out).toBe('Checking values. Here is my read.');
+  });
+
+  it('removes an object-array tool result with nested braces intact', () => {
+    const out = stripLeakedToolJson(
+      'Data: {"players":[{"name":"A","stats":{"HR":34}},{"name":"B"}]} done',
+    );
+    expect(out).toBe('Data: done');
+  });
+
+  it('leaves ordinary prose, markdown, and code untouched', () => {
+    const md =
+      '**Drop Player X.**\n\n### Why\n- Use `{"a":1}` inline.\n\n```json\n{"kept":true}\n```';
+    expect(stripLeakedToolJson(md)).toBe(md);
+  });
+
+  it('does not treat markdown links or simple arrays as JSON', () => {
+    const text = 'See [the docs](http://x) and pick [1, 2, 3] of them.';
+    expect(stripLeakedToolJson(text)).toBe(text);
   });
 });

@@ -32,7 +32,7 @@ export const SYSTEM_PROMPT = [
   "- Chain tools when one result feeds the next. To analyze the user's own team, first call get_league_rosters (or get_league_standings) and match the user's team name to its teamId, then call get_team_stats with that teamId. Never stop to ask the user for a teamId - look it up.",
   '- For saves/holds: before recommending any reliever for saves (SV, SV+H) or holds (HD), call get_bullpen_roles for that pitcher\'s MLB team and recommend the arm actually getting the chances (the derived closer/setup). Only call someone "the closer" when the usage supports it, and flag committees/unsettled situations instead of guessing.',
   '- Judge luck before trusting a hot or cold line: for a featured hitter or pitcher, call get_player_advanced_stats and compare results to the expected numbers (AVG vs xBA, SLG vs xSLG, BABIP). Frame over-performers as regression/sell-high risks and under-performers with strong underlying contact as buy-low targets, rather than taking surface stats at face value.',
-  '- Always weigh Value+ in trades and player comparisons: whenever the user asks about a trade, swap, buy/sell, or which player is more valuable - including a hitter vs a pitcher - call get_player_value for every named player involved before advising. Value+ (fields sgptPlus / sgptRank) is a single index (100 = league average, higher is better) from percentiles across THIS league\'s scoring categories; its rank spans hitters and pitchers on one scale. Cite each player\'s Value+ score and overall rank early in the answer. Value+ is important but not the only factor - also weigh category fit for THIS team, role/playing time, recent form, luck (advanced/expected stats), injury risk, and positional need. Do not invent Value+ for players the tool did not return.',
+  "- Always weigh Value+ in trades and player comparisons: whenever the user asks about a trade, swap, buy/sell, or which player is more valuable - including a hitter vs a pitcher - call get_player_value for every named player involved before advising. Value+ (fields sgptPlus / sgptRank) is a single index (100 = league average, higher is better) from percentiles across THIS league's scoring categories; its rank spans hitters and pitchers on one scale. Cite each player's Value+ score and overall rank early in the answer. Value+ is important but not the only factor - also weigh category fit for THIS team, role/playing time, recent form, luck (advanced/expected stats), injury risk, and positional need. Do not invent Value+ for players the tool did not return.",
   "- Only ask a clarifying question as a last resort when the request is genuinely ambiguous about the user's INTENT - never for data you can retrieve.",
   '- Be realistic and honest about uncertainty. Distinguish signal from small-sample noise, and treat outlooks (like playoff odds) as probabilities, not guarantees.',
   '- READ-ONLY: you recommend moves; the user executes them in Yahoo. Never claim to have made a change.',
@@ -87,9 +87,17 @@ export interface RunChatParams {
   cache?: TtlCache;
   /**
    * Fired as each read-only tool starts and finishes, so the route can stream live
-   * activity to the UI. Only the tool name and outcome are reported (never args/data).
+   * activity to the UI. 'start' carries the model's `args`; 'end' carries the outcome and
+   * the tool's (already-truncated) `result`, so the UI can offer an expandable detail. This
+   * is the same authenticated user's own league data - never tokens or another user's data.
    */
-  onToolEvent?: (event: { name: string; phase: 'start' | 'end'; ok?: boolean }) => void;
+  onToolEvent?: (event: {
+    name: string;
+    phase: 'start' | 'end';
+    ok?: boolean;
+    args?: string;
+    result?: string;
+  }) => void;
   /**
    * Fired with each chunk of the assistant's reply text as it streams, so the route can
    * forward the answer token-by-token. Only set when the provider supports streaming.
@@ -125,6 +133,100 @@ function extractMentionNames(content: string): string[] {
 /** Remove the tag syntax, leaving the plain player name in the rendered reply. */
 function stripMentionMarkers(content: string): string {
   return content.replace(MENTION_RE, '$1');
+}
+
+/**
+ * Index just past a balanced JSON object/array starting at `start` (respecting strings and
+ * escapes), or -1 if it never closes. Used to carve out embedded JSON without a full parser.
+ */
+function jsonSpanEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+/** A parsed JSON value that looks like leaked tool plumbing: a non-empty object, or an
+ *  array of objects (tool results and function-call payloads; never ordinary prose). */
+function looksLikeToolPayload(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) {
+    return (
+      value.length > 0 &&
+      value.every((e) => e !== null && typeof e === 'object' && !Array.isArray(e))
+    );
+  }
+  return Object.keys(value).length > 0;
+}
+
+/**
+ * Some models occasionally narrate a tool call by emitting the raw function-call JSON and/or
+ * the tool-result payload as literal reply text instead of using the structured tool-calling
+ * channel. That JSON is internal plumbing - never the answer - so strip any bare, balanced
+ * JSON object/array that parses cleanly, leaving fenced/inline code and ordinary prose intact.
+ * The tool inputs/outputs are still surfaced to the UI via the structured `tool` events.
+ */
+export function stripLeakedToolJson(content: string): string {
+  let out = '';
+  let i = 0;
+  const n = content.length;
+  while (i < n) {
+    if (content.startsWith('```', i)) {
+      const close = content.indexOf('```', i + 3);
+      const stop = close === -1 ? n : close + 3;
+      out += content.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (content[i] === '`') {
+      const close = content.indexOf('`', i + 1);
+      const stop = close === -1 ? n : close + 1;
+      out += content.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    const ch = content[i];
+    if (ch === '{' || ch === '[') {
+      const end = jsonSpanEnd(content, i);
+      if (end !== -1) {
+        try {
+          if (looksLikeToolPayload(JSON.parse(content.slice(i, end)))) {
+            i = end;
+            // Swallow a space that now sits between the text before and after the removed
+            // JSON, so the gap doesn't leave a stray double space.
+            if (out.endsWith(' ')) {
+              while (i < n && (content[i] === ' ' || content[i] === '\t')) i++;
+            }
+            continue;
+          }
+        } catch {
+          // Not valid JSON - fall through and keep the character as prose.
+        }
+      }
+    }
+    out += ch;
+    i++;
+  }
+  // Tidy the newline gaps left where JSON was removed.
+  return out
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function toSchema(tool: ChatTool): LlmToolSchema {
@@ -190,7 +292,7 @@ function buildResult(
 ): ChatResult {
   const players = registry.resolve(extractMentionNames(rawContent));
   return {
-    message: finalMessage(stripMentionMarkers(rawContent)),
+    message: finalMessage(stripMentionMarkers(stripLeakedToolJson(rawContent))),
     toolsUsed: [...toolsUsed],
     ...(usage ? { usage } : {}),
     ...(players.length > 0 ? { playersMentioned: players } : {}),
@@ -259,7 +361,7 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
     const toolResults = await Promise.all(
       result.toolCalls.map(async (call) => {
         toolsUsed.add(call.name);
-        params.onToolEvent?.({ name: call.name, phase: 'start' });
+        params.onToolEvent?.({ name: call.name, phase: 'start', args: call.arguments });
         const tool = toolByName.get(call.name);
         let content: string;
         let ok = true;
@@ -282,7 +384,7 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
             });
           }
         }
-        params.onToolEvent?.({ name: call.name, phase: 'end', ok });
+        params.onToolEvent?.({ name: call.name, phase: 'end', ok, result: content });
         return { call, content };
       }),
     );

@@ -1,0 +1,1163 @@
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  /* Messages sit in this gutter; the composer uses a smaller inset so it overhangs both sides. */
+  --chat-gutter: 1.5rem;
+  --composer-overhang: 0.7rem;
+  /* Scrollable space under the last message so the floating composer does not cover it.
+     Must be a real box (see .logSpacer) — padding-bottom on a flex scroller is often not
+     reachable with the wheel or scrollbar thumb. */
+  --log-end-space: 8.65rem;
+}
+
+.log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  /* Extra top room so the first message clears the floating options button. */
+  padding: 3rem var(--chat-gutter) 0.75rem;
+  scrollbar-gutter: stable;
+}
+
+.logSpacer {
+  flex: 0 0 var(--log-end-space);
+  width: 100%;
+  pointer-events: none;
+}
+
+.row {
+  display: flex;
+}
+
+.rowUser {
+  justify-content: flex-end;
+}
+
+.rowAssistant {
+  justify-content: flex-start;
+}
+
+/* Stacks an assistant reply's activity + bubble + citation cards (left-aligned). */
+.messageCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rowUser .messageCol {
+  align-items: flex-end;
+  max-width: min(78%, 36rem);
+}
+
+.messageCol .bubble {
+  max-width: 100%;
+}
+
+.assistantBlock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  max-width: 100%;
+}
+
+.copyButton,
+.retryButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.copyButton:hover,
+.retryButton:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+
+.retryButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.copyIcon {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: block;
+}
+
+.bubble {
+  max-width: min(78%, 36rem);
+  padding: 0.75rem 1rem;
+  border-radius: 18px;
+  line-height: 1.55;
+  font-size: 0.975rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubbleUser {
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 6px;
+}
+
+/* Frosted assistant panel — translucent glass over the dark canvas. */
+.bubbleAssistant {
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-bottom-left-radius: 6px;
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  white-space: normal;
+  /* Wider than user bubbles so structured content (sections, tables) reads well. */
+  max-width: 100%;
+}
+
+/* Markdown-rendered assistant content: clean, scannable prose with card-like tables. */
+.prose {
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p {
+  margin: 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.prose h1 {
+  font-size: 1.1rem;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.prose li {
+  margin: 0;
+}
+
+.prose li::marker {
+  color: var(--muted);
+}
+
+.prose strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prose a {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.05rem 0.3rem;
+}
+
+.prose pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.prose blockquote {
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.35rem 0;
+}
+
+/* Wide comparison tables scroll horizontally instead of clipping cells. */
+.prose :global(.proseTableScroll) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0.35rem 0;
+}
+
+.prose table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: 0;
+}
+
+.prose th,
+.prose td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.prose th {
+  background: var(--bg);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prose tr:last-child td {
+  border-bottom: none;
+}
+
+/* Live tool activity panel — frosted glass while a reply streams in. */
+.activityPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  font-size: 0.875rem;
+}
+
+.activityRow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 1.75rem;
+  padding: 0.1rem 0;
+  color: var(--muted);
+}
+
+.activityRowActive {
+  color: var(--text);
+}
+
+.activityRowDone {
+  color: var(--muted);
+}
+
+.activityStatusSlot {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* The full tool label; never clipped - it wraps instead of trailing off with an ellipsis. */
+.activityLabel {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/*
+ * The leading verb (e.g. "Scoring", "Checking") rendered as gently glowing, animated gradient
+ * text - a slow shimmer sweeps across it. Only rendered while the step is running, so a
+ * finished tool's label sits as plain static text.
+ */
+.activityVerb {
+  font-weight: 600;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--text) 62%, transparent) 0%,
+    var(--text) 30%,
+    var(--accent-hover) 48%,
+    var(--text) 66%,
+    color-mix(in srgb, var(--text) 62%, transparent) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: verb-shimmer 3.4s linear infinite;
+}
+
+@keyframes verb-shimmer {
+  from {
+    background-position: 220% 0;
+  }
+  to {
+    background-position: -220% 0;
+  }
+}
+
+/* Fixed-width trailing ellipsis so active rows don't change width. */
+.ellipsis {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  width: 1.35rem;
+}
+
+.ellipsisDot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: ellipsis-pulse 1.2s infinite ease-in-out;
+}
+
+.ellipsisDot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.ellipsisDot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ellipsis-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* Rotating ring for a tool that's still running. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: activity-spin 0.7s linear infinite;
+}
+
+.activityIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Each tool call gets its own frosted-glass bubble, stacked with a little breathing room. */
+.toolStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.toolBubble {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 68%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  font-size: 0.875rem;
+  overflow: hidden;
+  animation: tool-bubble-in 340ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A running bubble gets a soft accent aura so the in-flight step reads as active. */
+.toolBubbleActive {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 6px 20px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+@keyframes tool-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toolBubbleHead {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  cursor: default;
+  list-style: none;
+  user-select: none;
+}
+
+/* Expandable bubbles (a <details>) get a pointer + hover wash on the header. */
+details.toolBubble .toolBubbleHead {
+  cursor: pointer;
+}
+
+details.toolBubble .toolBubbleHead:hover {
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+}
+
+.toolBubbleHead::-webkit-details-marker {
+  display: none;
+}
+
+/* Chevron rotates down when the bubble is open. */
+.toolChevron {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+
+.toolBubble[open] .toolChevron {
+  transform: rotate(90deg);
+}
+
+.toolDetailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.1rem 0.75rem 0.7rem 2.05rem;
+  animation: tool-body-in 220ms ease both;
+}
+
+@keyframes tool-body-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.toolDetailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.toolDetailHeading {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.toolDetailPre {
+  margin: 0;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.65rem 0.8rem;
+  background: color-mix(in srgb, var(--bg) 82%, #000 18%);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* JSON syntax colors for the beautified request/result blocks. */
+.jsonKey {
+  color: #7cc5ff;
+}
+
+.jsonString {
+  color: #9ae6b4;
+}
+
+.jsonNumber {
+  color: #f6ad55;
+}
+
+.jsonLiteral {
+  color: #d6bcfa;
+}
+
+/*
+ * The composer zone: centered in a comfortable column with no hard divider. On an empty
+ * thread it sits in normal flow under the greeting; once messages exist it overlays the
+ * log on a solid canvas scrim so the island never tints against the scrollbar or bubbles.
+ */
+.dock {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem calc(var(--chat-gutter) - var(--composer-overhang)) 3.25rem;
+  background: transparent;
+}
+
+.chat:not([data-empty]) .dock {
+  position: absolute;
+  left: 0;
+  /* Leave the log's scrollbar uncovered so it can be dragged all the way to the end. */
+  right: 12px;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 2.25rem;
+  /* Solid canvas under the pill so backdrop-filter cannot sample the scrollbar or
+     message bubbles (that mix reads as a tinted "intersect"). Fade only in the top padding. */
+  background: linear-gradient(
+    to top,
+    var(--bg) 0%,
+    var(--bg) calc(100% - 2.35rem),
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.chat:not([data-empty]) .inputShell {
+  pointer-events: auto;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  width: 100%;
+  max-width: none;
+}
+
+.suggestion {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+
+.suggestion:hover {
+  border-color: var(--accent-hover);
+}
+
+.composer {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
+
+/*
+ * Frosted island on a stable canvas fill. Avoid letting backdrop-filter sample the
+ * thread/scrollbar — that produces a tinted intersect when the pill floats over them.
+ */
+.inputShell {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.43rem 0.43rem 0.43rem 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.89rem;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.02) 48%,
+      rgba(15, 23, 42, 0.08) 100%
+    ),
+    color-mix(in srgb, var(--panel) 72%, var(--bg) 28%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 14px 40px rgba(0, 0, 0, 0.32);
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.inputShell:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, rgba(255, 255, 255, 0.28));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 16px 44px rgba(0, 0, 0, 0.36);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  /* (send button 2.97rem - line 1.5rem) / 2 — vertically centers one line of text */
+  padding: 0.735rem 0;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.5rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.input::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input:focus {
+  outline: none;
+}
+
+.sendButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.97rem;
+  height: 2.97rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.sendButton:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.sendButton:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.sendButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sendIcon {
+  width: 1.24rem;
+  height: 1.24rem;
+  display: block;
+  margin-left: 0.05rem;
+}
+
+.scrollToBottom {
+  position: absolute;
+  left: 50%;
+  bottom: 10.25rem;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--panel) 40%, transparent);
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.scrollToBottom:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chat[data-empty] .scrollToBottom {
+  display: none;
+}
+
+/* The animated greeting shown only on an empty thread, above the centered composer. */
+.greeting {
+  margin: 0 0 1.25rem;
+  text-align: center;
+  font-size: clamp(1.5rem, 4.5vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  background: linear-gradient(
+    180deg,
+    var(--text),
+    color-mix(in srgb, var(--text) 70%, var(--muted))
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: greeting-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes greeting-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Empty-state layout: the log collapses and the composer zone rises to the vertical center,
+ * so the greeting + floating glass composer + suggestions read as a single welcome hero. On
+ * the first send the thread is no longer empty and the zone falls back to the docked layout.
+ */
+.chat[data-empty] .log {
+  display: none;
+}
+
+.chat[data-empty] {
+  justify-content: center;
+}
+
+.chat[data-empty] .dock {
+  border-top: none;
+  background: none;
+  padding-bottom: 3.25rem;
+  width: 100%;
+  margin: 0 auto;
+  align-items: stretch;
+  animation: dock-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.chat[data-empty] .suggestions {
+  justify-content: center;
+}
+
+@keyframes dock-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .chat {
+    --chat-gutter: 0.85rem;
+    --composer-overhang: 0.35rem;
+    --log-end-space: calc(8.35rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .log {
+    gap: 1rem;
+    padding: 0.85rem var(--chat-gutter) 0.5rem;
+    padding-left: calc(var(--chat-gutter) + env(safe-area-inset-left, 0px));
+    padding-right: calc(var(--chat-gutter) + env(safe-area-inset-right, 0px));
+  }
+
+  .bubble {
+    max-width: 92%;
+    padding: 0.85rem 1rem;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .dock {
+    padding: 0.5rem calc(var(--chat-gutter) - var(--composer-overhang))
+      calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(
+      var(--chat-gutter) - var(--composer-overhang) + env(safe-area-inset-left, 0px)
+    );
+    padding-right: calc(
+      var(--chat-gutter) - var(--composer-overhang) + env(safe-area-inset-right, 0px)
+    );
+    background: transparent;
+  }
+
+  .chat:not([data-empty]) .log {
+    padding-bottom: 0.5rem;
+  }
+
+  .chat[data-empty] .dock {
+    background: none;
+  }
+
+  .suggestions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 0.65rem -0.15rem 0;
+    padding: 0 0.15rem 0.15rem;
+  }
+
+  .chat[data-empty] .suggestions {
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow-x: visible;
+  }
+
+  .suggestions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .suggestion {
+    flex: 0 0 auto;
+    font-size: 0.92rem;
+    padding: 0.6rem 1rem;
+  }
+
+  .inputShell {
+    padding: 0.38rem 0.38rem 0.38rem 1.1rem;
+    border-radius: 2rem;
+  }
+
+  .input {
+    font-size: 16px; /* prevents iOS zoom-on-focus */
+    line-height: 1.5rem;
+    padding: 0.79rem 0; /* (3.08rem send - 1.5rem line) / 2 */
+  }
+
+  .sendButton {
+    width: 3.08rem;
+    height: 3.08rem;
+  }
+
+  .sendIcon {
+    width: 1.3rem;
+    height: 1.3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+
+  .ellipsisDot {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .toolChevron {
+    transition: none;
+  }
+
+  /* Freeze the shimmer to a legible solid color when motion is reduced. */
+  .activityVerb {
+    animation: none;
+    background: none;
+    color: var(--text);
+    -webkit-text-fill-color: var(--text);
+  }
+
+  .sendButton:active:not(:disabled) {
+    transform: none;
+  }
+
+  .greeting,
+  .chat[data-empty] .dock,
+  .toolBubble,
+  .toolDetailBody,
+  .menu {
+    animation: none;
+  }
+}
+
+/* Options control: a ghost icon button that lives inside the composer, left of Send. The
+ * popover is anchored to the input shell (not this button) so it always floats above the
+ * whole composer pill, never below the fold. */
+.menuWrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: flex-end;
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.97rem;
+  height: 2.97rem;
+  padding: 0;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.menuButton:hover,
+.menuButton[aria-expanded='true'] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.menuButton:active {
+  transform: scale(0.94);
+}
+
+.menuIcon {
+  width: 1.28rem;
+  height: 1.28rem;
+  display: block;
+}
+
+.menu {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  right: 0.43rem;
+  z-index: 20;
+  min-width: 15rem;
+  max-width: min(20rem, 80vw);
+  max-height: min(24rem, 60vh);
+  overflow-y: auto;
+  padding: 0.4rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 18px 40px color-mix(in srgb, #000 32%, transparent);
+  transform-origin: bottom right;
+  animation: menuPop 0.16s ease;
+}
+
+@keyframes menuPop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: none;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.menuItem:disabled {
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.menuItemDanger:hover:not(:disabled) {
+  background: color-mix(in srgb, #ff5a5a 20%, transparent);
+  color: color-mix(in srgb, #ff7a7a 80%, var(--text));
+}
+
+.menuArchives {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.menuLabel {
+  margin: 0.1rem 0.7rem 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.archiveList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.archiveItem {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  border-radius: 0.65rem;
+}
+
+.archiveItem:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.archiveOpen {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.7rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: none;
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.archiveOpen:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.archiveTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archiveDate {
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.archiveDelete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    background 0.14s ease;
+}
+
+.archiveDelete:hover {
+  color: color-mix(in srgb, #ff7a7a 85%, var(--text));
+  background: color-mix(in srgb, #ff5a5a 18%, transparent);
+}
+
+.archiveDeleteIcon {
+  width: 1rem;
+  height: 1rem;
+}

@@ -26,11 +26,11 @@ describe('App shell', () => {
     vi.clearAllMocks();
   });
 
-  it('renders Home in the nav for guests', async () => {
+  it('renders Home in the nav for guests and hides TheShowGPT', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
     renderApp();
     expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('TheShowGPT')).toBeInTheDocument();
+    expect(screen.queryByText('TheShowGPT')).not.toBeInTheDocument();
     expect(screen.getByText('Rosters')).toBeInTheDocument();
     expect(screen.getByText('Live Standings')).toBeInTheDocument();
     expect(screen.getByText('Players')).toBeInTheDocument();
@@ -78,8 +78,20 @@ describe('App shell', () => {
     });
     renderApp('/');
 
-    expect(await screen.findByPlaceholderText('Message TheShowGPT…')).toBeInTheDocument();
+    // The /chat chunk now bundles assistant-ui, so allow extra time for the lazy import.
+    expect(
+      await screen.findByPlaceholderText('Ask a question about your team…', undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Connect your Yahoo account')).not.toBeInTheDocument();
+  });
+
+  it('does not show the chat composer to guests', async () => {
+    vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
+    renderApp('/chat');
+
+    expect(await screen.findByText('Connect your Yahoo account')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Ask a question about your team…')).not.toBeInTheDocument();
+    expect(screen.queryByText('TheShowGPT')).not.toBeInTheDocument();
   });
 
   it('lets authed users switch leagues and sign out from the user menu', async () => {
