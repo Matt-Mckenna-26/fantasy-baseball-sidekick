@@ -26,22 +26,25 @@ describe('App shell', () => {
     vi.clearAllMocks();
   });
 
-  it('renders Home in the nav for guests and hides TheShowGPT', async () => {
+  it('renders Home in the nav for guests and hides the TheShowGPT nav link', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
     renderApp();
     expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.queryByText('TheShowGPT')).not.toBeInTheDocument();
+    // Guests get the branded sign-in hero, but not the gated TheShowGPT nav link.
+    expect(screen.queryByRole('link', { name: /theshowgpt/i })).not.toBeInTheDocument();
     expect(screen.getByText('Rosters')).toBeInTheDocument();
     expect(screen.getByText('Live Standings')).toBeInTheDocument();
     expect(screen.getByText('Players')).toBeInTheDocument();
     expect(screen.getByText('League')).toBeInTheDocument();
   });
 
-  it('shows Connect Yahoo when disconnected', async () => {
+  it('funnels disconnected guests from Home into the TheShowGPT sign-in hero', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
-    renderApp();
-    const connect = await screen.findByText('Connect Yahoo');
-    expect(connect).toHaveAttribute('href', '/auth/yahoo');
+    renderApp('/');
+    const cta = await screen.findByRole('link', { name: 'Sign in with Yahoo' }, { timeout: 5000 });
+    expect(cta).toHaveAttribute('href', '/auth/yahoo');
+    // Guests never hit a bare "Connect Yahoo" page, and no league fetch is triggered.
+    expect(screen.queryByText('Connect Yahoo')).not.toBeInTheDocument();
     expect(getMyLeagues).not.toHaveBeenCalled();
   });
 
@@ -62,9 +65,11 @@ describe('App shell', () => {
     });
     renderApp('/chat');
 
-    expect(await screen.findByText('Bronx Bombers')).toBeInTheDocument();
+    // "The Show (2026)" is unique to the user menu; the team name also appears in the chat
+    // greeting once the (now pre-loaded) /chat chunk renders, so await the unique label.
+    expect(await screen.findByText('The Show (2026)')).toBeInTheDocument();
     expect(screen.getByLabelText("Bronx Bombers' Fantasy Baseball Co-Manager")).toBeInTheDocument();
-    expect(screen.getByText('The Show (2026)')).toBeInTheDocument();
+    expect(screen.getAllByText('Bronx Bombers').length).toBeGreaterThan(0);
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });
 

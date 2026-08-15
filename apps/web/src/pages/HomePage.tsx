@@ -1,8 +1,12 @@
 import { Navigate } from 'react-router-dom';
-import { YAHOO_LOGIN_URL } from '../api/client';
 import { useSession } from '../context/SessionContext';
 
-/** Landing page for guests; authed users are sent straight into the app. */
+/**
+ * Landing route (`/`). Everyone lands in the chat experience: authed users get the
+ * co-manager, guests get the TheShowGPT sign-in hero ([ChatGuestView], rendered by
+ * [ChatPage]). We redirect rather than render a second sign-in screen so guests never
+ * see the old bare "Connect Yahoo" page and the chat shell styling stays consistent.
+ */
 export function HomePage() {
   const { session } = useSession();
 
@@ -10,24 +14,5 @@ export function HomePage() {
     // Session boot fetch drives the global LoadingOverlay; render nothing here.
     return null;
   }
-
-  if (session.status === 'connected') {
-    return <Navigate to="/chat" replace />;
-  }
-
-  const sessionExpired = session.status === 'disconnected' && session.sessionExpired;
-
-  return (
-    <section>
-      <h1>{sessionExpired ? 'Session expired' : 'Connect your Yahoo account'}</h1>
-      <p>
-        {sessionExpired
-          ? 'Your Yahoo sign-in is no longer valid. Sign in again to load your leagues (read-only).'
-          : 'Sign in with Yahoo to load your fantasy baseball leagues (read-only).'}
-      </p>
-      <a className="button button--block" href={YAHOO_LOGIN_URL}>
-        Connect Yahoo
-      </a>
-    </section>
-  );
+  return <Navigate to="/chat" replace />;
 }

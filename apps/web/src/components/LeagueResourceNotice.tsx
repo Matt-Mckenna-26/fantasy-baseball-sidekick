@@ -1,5 +1,4 @@
-import { YAHOO_LOGIN_URL } from '../api/client';
-import { useSession } from '../context/SessionContext';
+import { Navigate } from 'react-router-dom';
 
 /** Renders the loading/disconnected/empty/not_allowed/error states shared by data pages. */
 export function LeagueResourceNotice({
@@ -7,27 +6,14 @@ export function LeagueResourceNotice({
 }: {
   status: 'loading' | 'disconnected' | 'empty' | 'not_allowed' | 'error';
 }) {
-  const { session } = useSession();
-
   if (status === 'loading') {
     // The in-flight fetch drives the global LoadingOverlay; render nothing here.
     return null;
   }
   if (status === 'disconnected') {
-    const sessionExpired = session.status === 'disconnected' && session.sessionExpired;
-    return (
-      <section>
-        <h1>{sessionExpired ? 'Session expired' : 'Connect your Yahoo account'}</h1>
-        <p>
-          {sessionExpired
-            ? 'Your Yahoo sign-in is no longer valid. Sign in again to continue (read-only).'
-            : 'Sign in with Yahoo to view this page (read-only).'}
-        </p>
-        <a className="button" href={YAHOO_LOGIN_URL}>
-          Connect Yahoo
-        </a>
-      </section>
-    );
+    // Guests never see a bare "Connect Yahoo" page: send them to the TheShowGPT sign-in
+    // hero (/chat), which handles both the cold and expired-session copy.
+    return <Navigate to="/chat" replace />;
   }
   if (status === 'empty') {
     return <p className="muted">No MLB leagues found on your Yahoo account.</p>;
