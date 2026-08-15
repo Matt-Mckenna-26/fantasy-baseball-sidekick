@@ -30,3 +30,12 @@
   transform: translateY(-1px);
   outline: none;
 }
+
+/* "Value+" glossary term: a subtle dotted underline that reveals the explainer on hover. */
+.glossary {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  text-underline-offset: 2px;
+  cursor: help;
+  white-space: nowrap;
+}

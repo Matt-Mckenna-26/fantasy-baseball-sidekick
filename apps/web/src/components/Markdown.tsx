@@ -2,6 +2,7 @@ import type { Components } from 'react-markdown';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { CitedSource } from '@fcm/contracts';
+import { VALUE_PLUS_EXPLAINER } from '../lib/valuePlus';
 import styles from './Markdown.module.css';
 
 /**
@@ -28,10 +29,20 @@ export function Markdown({
   const byIndex = new Map((citations ?? []).map((s) => [s.index, s]));
   // Rewrite [[s:N]] to a markdown link with a private `cite:` scheme so the `a` renderer can
   // style it as a pill and swap in the real (validated) source URL. Drop unknown indexes.
-  const source = byIndex.size > 0 ? rewriteCitations(children, byIndex) : children;
+  // Then turn every "Value+" mention into a hoverable glossary term (private `valueplus:` scheme).
+  const source = rewriteValuePlus(
+    byIndex.size > 0 ? rewriteCitations(children, byIndex) : children,
+  );
 
   const components: Components = {
     a: ({ node: _node, href, children: linkChildren, ...props }) => {
+      if (href === VALUE_PLUS_HREF) {
+        return (
+          <abbr className={styles.glossary} title={VALUE_PLUS_EXPLAINER}>
+            {linkChildren}
+          </abbr>
+        );
+      }
       const citeIndex = parseCiteHref(href);
       if (citeIndex !== undefined) {
         const src = byIndex.get(citeIndex);
@@ -61,10 +72,10 @@ export function Markdown({
     ),
   };
 
-  // react-markdown sanitizes URLs and would strip our private `cite:` scheme (leaving an
-  // href-less anchor); let it through so the citation pills keep their handle to the source.
+  // react-markdown sanitizes URLs and would strip our private `cite:`/`valueplus:` schemes
+  // (leaving an href-less anchor); let them through so the custom renderers keep their handle.
   const urlTransform = (url: string): string =>
-    url.startsWith('cite:') ? url : defaultUrlTransform(url);
+    url.startsWith('cite:') || url === VALUE_PLUS_HREF ? url : defaultUrlTransform(url);
 
   return (
     <div className={className}>
@@ -85,6 +96,18 @@ function rewriteCitations(text: string, byIndex: Map<number, CitedSource>): stri
     const idx = Number(digits);
     return byIndex.has(idx) ? `[${idx}](cite:${idx})` : '';
   });
+}
+
+/** Private href scheme marking a "Value+" glossary term (see the `a` renderer). */
+const VALUE_PLUS_HREF = 'valueplus:';
+
+/**
+ * Turn each plain-text "Value+" into a markdown link with a private scheme, so the `a` renderer
+ * can show it as a hoverable glossary term. Only matches the bare label (not inside a link),
+ * which is how the co-manager writes it (e.g. "Value+ 126").
+ */
+function rewriteValuePlus(text: string): string {
+  return text.replace(/(^|[^[\]/\w])Value\+/g, (_m, lead: string) => `${lead}[Value+](valueplus:)`);
 }
 
 /** Parse the citation index out of a `cite:N` href, or undefined for ordinary links. */

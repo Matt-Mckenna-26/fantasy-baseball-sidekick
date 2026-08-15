@@ -1,4 +1,5 @@
 import { ChatBackdrop } from '../chat/ChatBackdrop';
+import { ChatGuestView } from '../chat/ChatGuestView';
 import { ChatRuntimeProvider } from '../chat/ChatRuntimeProvider';
 import { ChatThread } from '../chat/ChatThread';
 import styles from '../chat/chat.module.css';
@@ -17,12 +18,10 @@ export function ChatPage() {
     return <LeagueResourceNotice status="loading" />;
   }
   if (session.status === 'disconnected') {
-    return <LeagueResourceNotice status="disconnected" />;
+    return <ChatGuestView />;
   }
   if (!session.selectedLeague) {
-    return (
-      <LeagueResourceNotice status={session.leagues.length === 0 ? 'empty' : 'not_allowed'} />
-    );
+    return <LeagueResourceNotice status={session.leagues.length === 0 ? 'empty' : 'not_allowed'} />;
   }
 
   return (

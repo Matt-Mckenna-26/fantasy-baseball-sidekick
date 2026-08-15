@@ -38,15 +38,24 @@ describe('chat tools', () => {
     ).rejects.toBeInstanceOf(ToolError);
   });
 
-  it('get_free_agents returns a compact snapshot for an allowed league', async () => {
+  it('get_free_agents returns a compact snapshot with Value+ scored against the rostered pool', async () => {
     const out = (await byName
       .get('get_free_agents')!
       .run({ range: 'last30' }, ctx('469.l.101214'))) as {
       range: string;
-      batting: unknown[];
+      batting: { name: string; sgptPlus?: number; sgptRank?: number }[];
     };
     expect(out.range).toBe('last30');
     expect(Array.isArray(out.batting)).toBe(true);
+    expect(out.batting.length).toBeGreaterThan(0);
+    // Free agents now carry Value+ (scored vs the rostered pool) and lead with the best value.
+    expect(typeof out.batting[0]!.sgptPlus).toBe('number');
+    expect(typeof out.batting[0]!.sgptRank).toBe('number');
+    for (let i = 1; i < out.batting.length; i++) {
+      const prev = out.batting[i - 1]!.sgptRank ?? Infinity;
+      const cur = out.batting[i]!.sgptRank ?? Infinity;
+      expect(prev).toBeLessThanOrEqual(cur);
+    }
   });
 
   it('get_recent_transactions returns a compact snapshot for an allowed league', async () => {

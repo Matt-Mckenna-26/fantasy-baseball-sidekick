@@ -40,6 +40,7 @@ import { buildTeamColorMap } from '../components/charts/palette';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
 import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
 import { scoringColumns, toCompareEntity, toStatRow, type StatRow } from '../lib/statPool';
+import { VALUE_PLUS_EXPLAINER, VALUE_PLUS_UNQUALIFIED, valuePlusTitle } from '../lib/valuePlus';
 import {
   buildPlayerTrendSeries,
   fetchFreeAgentTrendWindows,
@@ -477,8 +478,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         type: 'numericColumn',
         width: 96,
         ...(pinMeta ? { pinned: 'left' as const } : {}),
-        headerTooltip:
-          'Value+: overall fantasy value from percentiles across the league scoring categories. 100 = league average, higher is better; the rank spans both hitters and pitchers.',
+        headerTooltip: VALUE_PLUS_EXPLAINER,
         cellRenderer: SgptCell,
         comparator: rankComparator,
         filter: 'agNumberColumnFilter',
@@ -1193,15 +1193,21 @@ function RankCell(params: CustomCellRendererProps) {
   return <span className={gridStyles.rankBadge}>{value}</span>;
 }
 
-/** Value+ cell: the value index as a badge, with the cross-position rank in the tooltip. */
+/** Value+ cell: the value index as a badge, with an explanatory tooltip + cross-position rank. */
 function SgptCell(params: CustomCellRendererProps) {
   const value = params.value as number | null | undefined;
-  if (value == null) return <span className={gridStyles.rankEmpty}>-</span>;
+  if (value == null)
+    return (
+      <span className={gridStyles.rankEmpty} title={VALUE_PLUS_UNQUALIFIED}>
+        -
+      </span>
+    );
   const rank = (params.data as StatRow | undefined)?.sgptRank;
-  const title =
-    typeof rank === 'number' ? `Value+ ${value} - #${rank} overall (hitters + pitchers)` : `Value+ ${value}`;
   return (
-    <span className={gridStyles.sgptBadge} title={title}>
+    <span
+      className={gridStyles.sgptBadge}
+      title={valuePlusTitle(value, typeof rank === 'number' ? rank : undefined)}
+    >
       {value}
     </span>
   );

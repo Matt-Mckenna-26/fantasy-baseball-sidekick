@@ -162,10 +162,21 @@ export function snapshotTeamPlayers(dto: TeamStatsResponse): {
   };
 }
 
-/** Top-N players from a stat table by overall rank, as compact rows. */
-function topPlayers(table: StatTable, cap: number) {
+/**
+ * Top-N players from a stat table as compact rows. Sorted by Yahoo overall rank by default; set
+ * `byValue` to lead with the best Value+ (sgptRank) instead, falling back to overall rank - used
+ * for free agents so the highest-value pickups surface first.
+ */
+function topPlayers(table: StatTable, cap: number, byValue = false) {
   return [...table.players]
-    .sort((a, b) => (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity))
+    .sort((a, b) => {
+      if (byValue) {
+        const ra = a.sgptRank ?? Infinity;
+        const rb = b.sgptRank ?? Infinity;
+        if (ra !== rb) return ra - rb;
+      }
+      return (a.overallRank ?? Infinity) - (b.overallRank ?? Infinity);
+    })
     .slice(0, cap)
     .map((p) => ({
       name: p.player.fullName,
@@ -251,7 +262,8 @@ export function snapshotValueScores(
 export function snapshotFreeAgents(dto: LeagueFreeAgentsResponse, cap = DEFAULT_PLAYER_CAP) {
   return {
     range: dto.range,
-    batting: topPlayers(dto.batting, cap),
-    pitching: topPlayers(dto.pitching, cap),
+    // Lead with the best Value+ pickups (scored against the rostered pool), not Yahoo's order.
+    batting: topPlayers(dto.batting, cap, true),
+    pitching: topPlayers(dto.pitching, cap, true),
   };
 }

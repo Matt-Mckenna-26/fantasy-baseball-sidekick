@@ -8,6 +8,8 @@ import { asyncHandler, sendError } from '../http.js';
 import { isLeagueAllowed } from '../closedBeta.js';
 import { buildLeagueAdvancedStats } from '../leagueAdvancedStats.js';
 import { withSgptRank } from '../sgptRank.js';
+import { getScoredFreeAgents } from '../freeAgentValue.js';
+import { TtlCache, TTL } from '../ai/cache.js';
 
 /** Authenticated, read-only endpoints scoped to the signed-in Yahoo user. */
 export function createMeRouter(
@@ -16,6 +18,11 @@ export function createMeRouter(
   provider: FantasyProvider,
 ): Router {
   const router = Router();
+
+  // Free agents scored with Value+ (against the rostered pool) are cached per league + query
+  // so the extra rostered-stats fetch isn't repeated on every grid load. League-scoped data,
+  // safe to share across sessions - mirrors buildLeagueAdvancedStats's cache.
+  const freeAgentCache = new TtlCache();
 
   /**
    * Resolve the session's Yahoo tokens, proactively refreshing them if they are near
@@ -185,16 +192,21 @@ export function createMeRouter(
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
       const limit =
         Number.isFinite(limitRaw) && (limitRaw as number) > 0 ? (limitRaw as number) : undefined;
-      const freeAgents = await provider.getFreeAgents(
-        tokens,
-        leagueId,
-        {
-          range: parsedRange.data,
-          availability,
-          ...(position ? { position } : {}),
-          ...(limit ? { limit } : {}),
-        },
-        (refreshed) => tokenStore.save(req.sessionID, refreshed),
+      // Value+ is scored against the rostered pool so the grid can compare pickups to the roster.
+      const cacheKey = `${leagueId}:${parsedRange.data}:${availability}:${position ?? 'all'}:${limit ?? 'def'}`;
+      const freeAgents = await freeAgentCache.wrap(cacheKey, TTL.freeAgents, () =>
+        getScoredFreeAgents(
+          provider,
+          tokens,
+          leagueId,
+          {
+            range: parsedRange.data,
+            availability,
+            ...(position ? { position } : {}),
+            ...(limit ? { limit } : {}),
+          },
+          (refreshed) => tokenStore.save(req.sessionID, refreshed),
+        ),
       );
       res.json(freeAgents);
     }),

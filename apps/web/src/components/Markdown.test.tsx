@@ -37,3 +37,17 @@ describe('Markdown citations', () => {
     expect(link).toHaveAttribute('target', '_blank');
   });
 });
+
+describe('Markdown Value+ glossary', () => {
+  it('renders "Value+" mentions as a hoverable term (not a link) with the explainer', () => {
+    const { container } = render(<Markdown>{'His Value+ 126 leads your staff.'}</Markdown>);
+
+    const term = container.querySelector('abbr');
+    expect(term).not.toBeNull();
+    expect(term).toHaveTextContent('Value+');
+    expect(term?.getAttribute('title')).toMatch(/100 = league average/i);
+    // The surrounding prose (and the number) survive intact; it isn't turned into a link.
+    expect(container.textContent).toBe('His Value+ 126 leads your staff.');
+    expect(container.querySelector('a')).toBeNull();
+  });
+});

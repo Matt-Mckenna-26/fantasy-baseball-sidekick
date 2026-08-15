@@ -17,6 +17,7 @@ vi.mock('../context/SessionContext', () => ({
 }));
 
 import { sendChatMessage } from '../api/client';
+import { previewChatSuggestions } from '../fixtures/preview';
 
 const reply: ChatResponse = {
   message: {
@@ -82,13 +83,10 @@ describe('ChatPage', () => {
     const user = userEvent.setup();
     render(<ChatPage />);
 
-    await user.click(
-      screen.getByRole('button', { name: 'Where should I focus to climb the standings?' }),
-    );
+    const suggestion = previewChatSuggestions[0];
+    await user.click(screen.getByRole('button', { name: suggestion }));
 
-    expect(screen.getByLabelText('Ask a question about your team')).toHaveValue(
-      'Where should I focus to climb the standings?',
-    );
+    expect(screen.getByLabelText('Ask a question about your team')).toHaveValue(suggestion);
     expect(sendChatMessage).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Send message' }));
@@ -96,9 +94,7 @@ describe('ChatPage', () => {
     await waitFor(() =>
       expect(sendChatMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: expect.arrayContaining([
-            { role: 'user', content: 'Where should I focus to climb the standings?' },
-          ]),
+          messages: expect.arrayContaining([{ role: 'user', content: suggestion }]),
         }),
         expect.anything(),
       ),

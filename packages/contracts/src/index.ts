@@ -193,8 +193,11 @@ export const playerStatLineSchema = z.object({
   /**
    * Value+ index: the player's average percentile across the
    * league's scoring categories, indexed so 100 = league average (like OPS+/wRC+).
-   * Server-computed over the rostered pool. Absent when the player has no scored
-   * categories.
+   * Server-computed over the rostered pool. Innings pitched is NOT a scored category - it
+   * only gates which pitchers qualify (relievers aren't penalized for low volume). Role-only
+   * categories (Saves/Holds for relievers, Quality Starts/CG/SHO for starters) are scored only
+   * among the pitchers who accrue them, so neither role is docked for the other's category.
+   * Absent when the player has no scored categories or a pitcher is below the minimum-innings gate.
    */
   sgptPlus: z.number().optional(),
   /**

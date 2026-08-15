@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { StatColumn } from '@fcm/contracts';
 import { toNumericValue } from '../../lib/teamTrend';
+import { valuePlusTitle } from '../../lib/valuePlus';
 import { heatColor } from '../PercentileHeatCell';
 import { PlayerNameButton } from '../PlayerNameButton';
 import { CompareAvatar, type CompareEntity } from './compareEntity';
@@ -57,44 +58,42 @@ export const CompareEntityTiles = memo(function CompareEntityTiles({
             className={`${styles.compareTile}${fillHeight ? ` ${styles.compareTileFill}` : ''}`}
           >
             {hideHeader ? null : (
-            <div className={styles.compareTileHead}>
-              <span className={styles.tooltipAvatar}>
-                <CompareAvatar
-                  name={e.name}
-                  kind={e.kind}
-                  {...(e.imageUrl ? { imageUrl: e.imageUrl } : {})}
-                />
-              </span>
-              <span className={styles.compareTileNameCol}>
-                <span className={styles.compareTileName}>
-                  {e.kind === 'player' ? (
-                    <PlayerNameButton
-                      target={{
-                        playerId: e.id,
-                        fullName: e.name,
-                        ...(e.imageUrl ? { headshotUrl: e.imageUrl } : {}),
-                      }}
-                    />
-                  ) : (
-                    e.name
-                  )}
+              <div className={styles.compareTileHead}>
+                <span className={styles.tooltipAvatar}>
+                  <CompareAvatar
+                    name={e.name}
+                    kind={e.kind}
+                    {...(e.imageUrl ? { imageUrl: e.imageUrl } : {})}
+                  />
                 </span>
-                {e.subtitle ? <span className={styles.compareTileOwner}>{e.subtitle}</span> : null}
-              </span>
-              {typeof e.sgptPlus === 'number' ? (
-                <span
-                  className={styles.compareTileSgpt}
-                  title={
-                    typeof e.sgptRank === 'number'
-                      ? `Value+ ${e.sgptPlus} - #${e.sgptRank} overall (hitters + pitchers)`
-                      : `Value+ ${e.sgptPlus}`
-                  }
-                >
-                  <span className={styles.compareTileSgptLabel}>Value+</span>
-                  <span className={styles.compareTileSgptValue}>{e.sgptPlus}</span>
+                <span className={styles.compareTileNameCol}>
+                  <span className={styles.compareTileName}>
+                    {e.kind === 'player' ? (
+                      <PlayerNameButton
+                        target={{
+                          playerId: e.id,
+                          fullName: e.name,
+                          ...(e.imageUrl ? { headshotUrl: e.imageUrl } : {}),
+                        }}
+                      />
+                    ) : (
+                      e.name
+                    )}
+                  </span>
+                  {e.subtitle ? (
+                    <span className={styles.compareTileOwner}>{e.subtitle}</span>
+                  ) : null}
                 </span>
-              ) : null}
-            </div>
+                {typeof e.sgptPlus === 'number' ? (
+                  <span
+                    className={styles.compareTileSgpt}
+                    title={valuePlusTitle(e.sgptPlus, e.sgptRank)}
+                  >
+                    <span className={styles.compareTileSgptLabel}>Value+</span>
+                    <span className={styles.compareTileSgptValue}>{e.sgptPlus}</span>
+                  </span>
+                ) : null}
+              </div>
             )}
             <div
               className={`${styles.compareTileStats}${fillHeight ? ` ${styles.compareTileStatsFill}` : ''}`}

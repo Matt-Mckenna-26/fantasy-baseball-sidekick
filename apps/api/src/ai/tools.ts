@@ -12,6 +12,7 @@ import { enrichPlayer, getPlayerNews, getProbableStarters } from '../mlbClient.j
 import { getPlayerAdvancedStats } from '../mlbAdvanced.js';
 import { getBullpenRoles } from '../mlbBullpen.js';
 import { withSgptRank } from '../sgptRank.js';
+import { getScoredFreeAgents } from '../freeAgentValue.js';
 import type { WebSearch } from '../exaClient.js';
 import type { PlayerRegistry } from './playerRegistry.js';
 import type { SourceRegistry } from './sourceRegistry.js';
@@ -240,7 +241,8 @@ export function buildTools(deps: ToolDeps = {}): ChatTool[] {
           names: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Full names of the players to value/compare (rostered players only).',
+            description:
+              'Full names of the players to value/compare (rostered players). For unrostered players, use get_free_agents, which now also returns Value+.',
           },
           ...rangeParam,
         },
@@ -275,7 +277,7 @@ export function buildTools(deps: ToolDeps = {}): ChatTool[] {
     {
       name: 'get_free_agents',
       description:
-        'Unrostered (or waiver-available) players for the league over a window, split into batting and pitching. Use for pickup/streaming targets. Optionally filter by position.',
+        "Unrostered (or waiver-available) players for the league over a window, split into batting and pitching, each with Value+ (sgptPlus/sgptRank) scored against your ROSTERED pool - so a pickup's value is directly comparable to the players you already have (e.g. it would slot in around #45 among rostered). Sorted best-Value+ first. Use for pickup/streaming targets. Optionally filter by position. Note: Value+ is cumulative/backward-looking, so a low-inning or recently injured arm can be unscored or understated - lean on ROS projections (web_search) there.",
       parameters: {
         type: 'object',
         properties: {
@@ -298,11 +300,22 @@ export function buildTools(deps: ToolDeps = {}): ChatTool[] {
         const query: FreeAgentsQuery = { range, availability, ...(position ? { position } : {}) };
         const key = `${leagueId}:freeAgents:${range}:${availability}:${position ?? 'all'}`;
         return ctx.cache.wrap(key, TTL.freeAgents, async () => {
-          const dto = await ctx.provider.getFreeAgents(
+          // Score free agents' Value+ against the rostered pool, reusing get_player_value's
+          // cached pool (same `${leagueId}:sgpt:${range}` entry) to avoid a duplicate fetch.
+          const dto = await getScoredFreeAgents(
+            ctx.provider,
             ctx.tokens,
             leagueId,
             query,
             ctx.onTokensRefreshed,
+            {
+              loadRostered: (r) =>
+                ctx.cache.wrap(`${leagueId}:sgpt:${r}`, TTL.playerStats, async () =>
+                  withSgptRank(
+                    await ctx.provider.getPlayerStats(ctx.tokens, leagueId, r, ctx.onTokensRefreshed),
+                  ),
+                ),
+            },
           );
           ctx.registry?.addPlayers(
             dto.batting.players.map((p) => p.player),

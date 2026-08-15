@@ -15,9 +15,11 @@ import { SourceRegistry } from './sourceRegistry.js';
 import { TtlCache } from './cache.js';
 
 /** Bounds that keep token spend + latency predictable (see plan-of-record AI design).
- * Rounds allow multi-step chains (e.g. standings -> rosters -> team stats -> free agents)
- * to complete without the model punting back to the user. */
-const MAX_TOOL_ROUNDS = 6;
+ * Rounds allow multi-step chains (e.g. standings -> rosters -> team stats -> free agents, or
+ * several web_search calls for different players' ROS projections) to complete without the
+ * model punting back to the user. The extra headroom over the minimum also absorbs the odd
+ * "stalled plan" retry (see looksLikeStalledPlan) without starving the real work. */
+const MAX_TOOL_ROUNDS = 8;
 const MAX_HISTORY_TURNS = 12;
 const MAX_INPUT_CHARS = 4000;
 const MAX_TOOL_RESULT_CHARS = 4000;
@@ -32,6 +34,22 @@ const LEAKED_TOOLCALL_NUDGE =
   'Never write raw tool-call syntax (such as "to=functions..." or "functions.web_search(...)") ' +
   'in your reply.';
 
+/** Nudge appended when the model only PROMISES to act ("I'll pull ROS pages...", bare search
+ *  queries) without actually calling a tool or answering. We drop the preamble and force it to
+ *  either issue the real call(s) or deliver the analysis. */
+const STALLED_PLAN_NUDGE =
+  'Your previous message only described what you were going to do (or wrote search queries as ' +
+  'text) without actually calling a tool or giving the analysis, so it was discarded. Do NOT ' +
+  'narrate steps or restate your plan. Either call the tool now through the function-calling ' +
+  'interface - you may call web_search several times in a row when you need multiple players\u2019 ' +
+  'ROS projections - or, if you already have enough, reply now with your complete final analysis ' +
+  'in Markdown.';
+
+/** Final nudge before the forced tool-less answer, so the turn always ends in real analysis. */
+const FINAL_ANSWER_NUDGE =
+  'Tools are no longer available for this reply. Using what you have already gathered, provide ' +
+  'your complete final analysis now in clean Markdown. Do not narrate steps or say you will search.';
+
 /**
  * High-level co-manager persona. The goal is always insightful, realistic, grounded
  * analysis; the model must call tools for facts and must never invent data or claim to
@@ -45,14 +63,18 @@ export const SYSTEM_PROMPT = [
   '',
   'Operating principles:',
   '- Ground every claim in data. Call the read-only tools for rosters, standings, matchups, team/player category stats, free agents, recent league transactions (adds, drops/waivers, trades), and MLB enrichment (real season stats and recent transactions) before advising. Never invent stats, players, standings, or transactions. If data is missing, say so.',
-  '- When web_search is available, USE IT PROACTIVELY to enrich - not just to fix facts. For any question involving specific players, waiver/streamer targets, trades, buy/sell, or start/sit, run one or more web_search calls to pull the latest real-world context and fold it into your reasoning: injury/health and IL updates, role or lineup-spot changes (call-ups, demotions, closer changes, batting-order moves), the story behind a hot or cold streak, park/weather/matchup notes, and expert or beat-writer takes and rankings. Treat a quick search as the DEFAULT enrichment step whenever current information would sharpen the advice; the only time to skip it is pure in-league math (standings math, category totals). Aim to ground the key players in your answer with at least one fresh web finding.',
+  '- When web_search is available, USE IT PROACTIVELY to enrich - not just to fix facts. For any question involving specific players, waiver/streamer targets, trades, buy/sell, or start/sit, run one or more web_search calls to pull the latest real-world context and fold it into your reasoning: injury/health and IL updates, role or lineup-spot changes (call-ups, demotions, closer changes, batting-order moves), the story behind a hot or cold streak, park/weather/matchup notes, FantasyPros start/sit and rest-of-season rankings, and projected (rest-of-season) stats. Treat a quick search as the DEFAULT enrichment step whenever current information would sharpen the advice; the only time to skip it is pure in-league math (standings math, category totals). Aim to ground the key players in your answer with at least one fresh web finding.',
   "- Your training data on MLB rosters, teams, roles, and news is STALE and often wrong (players change teams, get hurt, or shift roles after your cutoff). NEVER state a player's current MLB team, this week's sleepers, or breaking news from memory - search first. Always put the current month and year (given below) in every query (e.g. 'Jhoan Duran role news August 2026').",
   "- Cite every web-sourced claim inline with a [[s:N]] marker (N = the result's index) right where you use it - do NOT paste raw URLs or Markdown links; the app renders numbered pills and clickable source badges from those markers. web_search does NOT replace the league tools: still call get_free_agents / get_league_rosters / get_player_value / get_player_advanced_stats for THIS league to check availability and value. If web search and the Yahoo/MLB tools disagree, trust the tools for in-league stats and trust search for current team/affiliation and news, and say which you relied on.",
   '- Be fully autonomous. Never ask the user for information you can obtain yourself with tools (team ids, rosters, standings, stats, player data, injury news). Gather what you need across as many tool calls as it takes, THEN answer. The league is already selected for you - do not ask which league.',
+  '- Do NOT narrate your process, restate your plan, announce what you are "about to" do, or write out search queries as text. Call tools silently (the UI shows tool activity to the user) - you may call web_search several times in one turn when you need multiple players\u2019 ROS projections - and only send a message when it is the COMPLETE final analysis. A message that just says "I\u2019ll search/pull/fetch..." is never acceptable; either make the tool call or deliver the answer.',
   "- Chain tools when one result feeds the next. To analyze the user's own team, first call get_league_rosters (or get_league_standings) and match the user's team name to its teamId, then call get_team_stats with that teamId. Never stop to ask the user for a teamId - look it up.",
   '- For saves/holds: before recommending any reliever for saves (SV, SV+H) or holds (HD), call get_bullpen_roles for that pitcher\'s MLB team and recommend the arm actually getting the chances (the derived closer/setup). Only call someone "the closer" when the usage supports it, and flag committees/unsettled situations instead of guessing.',
   '- Judge luck before trusting a hot or cold line: for a featured hitter or pitcher, call get_player_advanced_stats and compare results to the expected numbers (AVG vs xBA, SLG vs xSLG, BABIP). Frame over-performers as regression/sell-high risks and under-performers with strong underlying contact as buy-low targets, rather than taking surface stats at face value.',
-  "- Always weigh Value+ in trades and player comparisons: whenever the user asks about a trade, swap, buy/sell, or which player is more valuable - including a hitter vs a pitcher - call get_player_value for every named player involved before advising. Value+ (fields sgptPlus / sgptRank) is a single index (100 = league average, higher is better) from percentiles across THIS league's scoring categories; its rank spans hitters and pitchers on one scale. Cite each player's Value+ score and overall rank early in the answer. Value+ is important but not the only factor - also weigh category fit for THIS team, role/playing time, recent form, luck (advanced/expected stats), injury risk, and positional need. Do not invent Value+ for players the tool did not return.",
+  "- Always weigh Value+ in trades and player comparisons: whenever the user asks about a trade, swap, buy/sell, or which player is more valuable - including a hitter vs a pitcher - call get_player_value for every named player involved before advising. Value+ (fields sgptPlus / sgptRank) is a single index (100 = league average, higher is better) from percentiles across THIS league's scoring categories; its rank spans hitters and pitchers on one scale. Innings pitched is NOT scored in Value+ - it only gates which pitchers qualify - so never describe a reliever's Value+ as volume-suppressed, and a pitcher below the innings gate simply has no Value+ (say so rather than inventing one). Cite each player's Value+ score and overall rank early in the answer. Value+ is important but not the only factor - also weigh category fit for THIS team, role/playing time, recent form, luck (advanced/expected stats), injury risk, and positional need. Do not invent Value+ for players the tool did not return.",
+  "- Innings pitched (IP) is NOT a scoring category in this league - it only sets the minimum innings a pitcher must reach to qualify. Do NOT treat a low IP total as a negative on its own or hold it against a pitcher: light innings are normal and fine for relievers and for starters with fewer (but effective) outings, and IP never costs or earns fantasy points directly. Low volume matters ONLY when it also drags down the categories that DO score - strikeouts (K), quality starts (QS), wins (W), saves/holds (SV/HD) - so judge pitchers on those counting stats plus their rate stats (ERA/WHIP) and role/ROS outlook. Flag light innings as a concern only when it is accompanied by thin counting production; a low-IP arm with strong per-inning and counting output is not a problem.",
+  '- CRUCIAL: Value+ is BACKWARD-LOOKING and cumulative - it rewards accumulated season-to-date production, so an injury or any missed time DEFLATES it (counting stats especially) and it systematically UNDER-RATES elite talent that lost weeks to the IL. Never bench, sit, or drop a proven, now-healthy player on a low or middling Value+ alone. When Value+ looks low, check whether missed time (not talent) caused it (get_player_advanced_stats + web_search for injury status), and say plainly when the number understates the player.',
+  "- Whenever you judge a player's FUTURE performance (start/sit, add, drop, keep, or 'is this real?'), you MUST web_search for that player's FantasyPros REST-OF-SEASON (ROS) projections and rankings, querying with the current month/year (given below) so you get the live ROS outlook - not last year's numbers or a stale preseason ranking. Lead the forward-looking recommendation with those ROS projections and cite them; use get_player_value and season-to-date stats only as a backward-looking baseline. A short injury or cold stretch that tanks Value+/counting stats is not, by itself, a reason to drop talent the ROS projections still like that is healthy and back in a good role.",
   "- Only ask a clarifying question as a last resort when the request is genuinely ambiguous about the user's INTENT - never for data you can retrieve.",
   '- Be realistic and honest about uncertainty. Distinguish signal from small-sample noise, and treat outlooks (like playoff odds) as probabilities, not guarantees.',
   '- READ-ONLY: you recommend moves; the user executes them in Yahoo. Never claim to have made a change.',
@@ -86,6 +108,7 @@ export const SYSTEM_PROMPT = [
   '- What does recent form (last7/last30) say versus the season line - improving, regressing, steady? Is a hot streak real or variance?',
   '- What is the surrounding context (lineup, park, matchup, IL/DTD status) and how does it affect near-term expectations?',
   "- What does the LATEST real-world reporting say (web_search)? Any injury update, role change, call-up, or beat-writer note that the in-league numbers can't show yet? Weave the freshest findings in and cite them.",
+  '- For a start/sit or drop call, what do FORWARD-looking sources say - rest-of-season projections and FantasyPros-style rankings (web_search)? Weight those over the backward-looking Value+/season sample, especially for a talented player whose number is deflated by missed time rather than decline.',
   "- What is the player's value above replacement at their position versus what's freely available on waivers?",
   '',
   "Always tie advice back to this specific team's categories, needs, and situation. If a tool returns no match or missing data, say so plainly instead of guessing.",
@@ -267,6 +290,29 @@ export function looksLikeLeakedToolCall(content: string): boolean {
   return LEAKED_TOOLCALL_RE.test(content);
 }
 
+/** Future-intent narration ("I'll search/pull/fetch ...", "Proceeding to gather ...", etc.). */
+const STALLED_PLAN_RE =
+  /\b(?:I['’]ll|I\s+will|I['’]m\s+going\s+to|I\s+am\s+going\s+to|let\s+me|now\s+I['’]ll)\b[^.\n]*\b(?:search|pull|fetch|gather|look\s+up|check|find|grab|retrieve|query|scan|browse)\b|\bproceeding\s+to\b|\bsearching\s+(?:for|the\s+web|now)\b|\bwill\s+(?:now\s+)?(?:search|pull|fetch|gather|retrieve)\b/i;
+
+/** A bare quoted search query sitting on its own line (leaked planning, never real prose). */
+const STALLED_QUERY_LINE_RE = /^[\s>*_-]*["“][^"”\n]{12,}["”]\s*$/m;
+
+/**
+ * True when a no-tool-call completion is just a PLAN/preamble rather than the answer: the model
+ * promised to search/fetch (or dumped bare query strings) and stopped. To avoid discarding a
+ * genuine reply that merely says "I'll check back", the intent match only counts when the text
+ * is short and lacks the Markdown structure (headers/bullets/bold) a finished answer carries.
+ * A bare quoted-query line always counts. The loop then nudges for a real call or a real answer.
+ */
+export function looksLikeStalledPlan(content: string): boolean {
+  const text = content.trim();
+  if (!text) return false;
+  if (STALLED_QUERY_LINE_RE.test(text)) return true;
+  if (!STALLED_PLAN_RE.test(text)) return false;
+  const hasAnswerStructure = /(?:^|\n)\s*(?:#{1,6}\s|[-*]\s|\d+\.\s)|\*\*/.test(text);
+  return text.length < 600 && !hasAnswerStructure;
+}
+
 /**
  * Cut a leaked tool-call fragment (and any degenerate tail after it) from the reply so the
  * raw plumbing never reaches the user. Removes everything from the first marker to the end of
@@ -433,13 +479,18 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
     usage = addUsage(usage, result.usage);
 
     if (result.toolCalls.length === 0) {
-      // The model narrated a tool call as plain text (harmony/garbled) but produced no usable
-      // call. Don't surface the plumbing: drop the leaked preamble and nudge it to call the
-      // tool properly or answer. Retry with tools if rounds remain; otherwise break to the
-      // forced tool-less final answer below, so the turn always finishes with real prose.
-      if (looksLikeLeakedToolCall(result.content)) {
+      // No usable tool call. If the model only leaked tool-call plumbing (harmony/garbled) or
+      // narrated a plan it never executed ("I'll pull ROS pages...", bare query strings), that
+      // preamble is NOT the answer: drop it, nudge the model to actually call the tool or reply,
+      // and retry while rounds remain; otherwise break to the forced tool-less answer below so
+      // the turn always finishes with real prose.
+      const leaked = looksLikeLeakedToolCall(result.content);
+      if (leaked || looksLikeStalledPlan(result.content)) {
         params.onResetAssistant?.();
-        messages.push({ role: 'system', content: LEAKED_TOOLCALL_NUDGE });
+        messages.push({
+          role: 'system',
+          content: leaked ? LEAKED_TOOLCALL_NUDGE : STALLED_PLAN_NUDGE,
+        });
         if (round < MAX_TOOL_ROUNDS - 1) continue;
         break;
       }
@@ -489,7 +540,10 @@ export async function runChat(params: RunChatParams): Promise<ChatResult> {
     }
   }
 
-  // Rounds exhausted: force a final text answer with tools disabled (streamed when supported).
+  // Rounds exhausted (or a final-round stall/leak): force a final text answer with tools
+  // disabled and one last nudge, so the turn always ends in real analysis instead of a plan.
+  params.onResetAssistant?.();
+  messages.push({ role: 'system', content: FINAL_ANSWER_NUDGE });
   const finalRes = await runCompletion([]);
   usage = addUsage(usage, finalRes.usage);
   return buildResult(finalRes.content, toolsUsed, usage, registry, sources);

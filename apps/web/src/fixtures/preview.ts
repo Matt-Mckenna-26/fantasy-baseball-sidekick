@@ -17,10 +17,16 @@ export const previewChatHistory = [
   },
 ] satisfies ChatMessage[];
 
-/** Suggested starter prompts shown on the empty chat state. Clicking one fills the composer. */
+/**
+ * Suggested starter prompts shown on the empty chat state. Clicking one fills the composer.
+ * Written to pull the co-manager toward careful, web-grounded analysis - naming FantasyPros
+ * rest-of-season projections/rankings and the latest injury/role news alongside league data -
+ * rather than one-line answers off stale training knowledge.
+ */
 export const previewChatSuggestions = [
-  'Where should I focus to climb the standings?',
-  'Which of my players need a closer look?',
-  'Who are my best trade partners?',
-  'Which free agents would add the most value?',
+  'Compare my free agents to FantasyPros rest-of-season rankings and my roster gaps, then name the top adds worth researching.',
+  "What's my weakest scoring category, and which available players have the rest-of-season projections to fix it?",
+  'Give me start/sit calls for this week using recent form, matchups, and the latest injury and role news.',
+  'Find a buy-low trade target whose value dropped on an injury or cold start but whose rest-of-season outlook is still strong.',
+  'Flag any of my players trending down in role, health, or rest-of-season projection.',
 ] as const;

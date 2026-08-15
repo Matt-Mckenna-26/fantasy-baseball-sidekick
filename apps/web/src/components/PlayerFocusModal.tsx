@@ -14,6 +14,7 @@ import { useIsNarrow } from '../hooks/useIsNarrow';
 import { buildPlayerMetricTrend, playerTrendWindows } from '../lib/playerTrend';
 import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
 import { scoringColumns, toCompareEntity, toStatRow } from '../lib/statPool';
+import { valuePlusTitle } from '../lib/valuePlus';
 import { buildTeamColorMap } from './charts/palette';
 import { CompareEntityTiles } from './charts/CompareEntityTiles';
 import { PlayerTrendChart, buildTrendLegendRows } from './charts/PlayerTrendChart';
@@ -615,11 +616,7 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
                 {typeof line?.sgptPlus === 'number' ? (
                   <span
                     className={styles.sgptBadge}
-                    title={
-                      typeof line.sgptRank === 'number'
-                        ? `Value+ ${line.sgptPlus} - #${line.sgptRank} overall (hitters + pitchers)`
-                        : `Value+ ${line.sgptPlus}`
-                    }
+                    title={valuePlusTitle(line.sgptPlus, line.sgptRank)}
                   >
                     Value+ {line.sgptPlus}
                     {typeof line.sgptRank === 'number' ? (

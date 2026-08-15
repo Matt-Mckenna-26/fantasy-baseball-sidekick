@@ -19,7 +19,7 @@ import type { ChatMessage, ChatTurn, CitedSource, MentionedPlayer } from '@fcm/c
 import { sendChatMessage } from '../api/client';
 import { useSession } from '../context/SessionContext';
 import { useLeagueStatPool, type LeagueStatPool } from '../hooks/useLeagueStatPool';
-import { stripStreamingMentions } from './streaming';
+import { createSmoothReveal, stripStreamingMentions, type SmoothReveal } from './streaming';
 import { THINKING_LABEL } from './ToolActivityCard';
 
 /** One read-only tool the co-manager ran this turn, with its live/finished state. `args`
@@ -288,6 +288,11 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const abortRef = useRef<AbortController | null>(null);
+  // Smoothly reveals streamed text (see createSmoothReveal); tracked so stop()/unmount can snap.
+  const revealRef = useRef<SmoothReveal | null>(null);
+
+  // Snap any in-flight reveal to full text if the component unmounts mid-stream.
+  useEffect(() => () => revealRef.current?.cancel(), []);
 
   // Keep the transcript capped and mirrored to localStorage. When over the cap we trim the
   // oldest entries first; that state update re-runs this effect, which then persists.
@@ -357,6 +362,8 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
   const footer = useMemo<ChatFooterValue>(() => ({ pool, onAnalyze }), [pool, onAnalyze]);
 
   const stop = useCallback(() => {
+    // Snap the typing animation to full text, then abort the request.
+    revealRef.current?.cancel();
     abortRef.current?.abort();
   }, []);
 
@@ -372,12 +379,18 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
       ]);
       setIsRunning(true);
 
+      revealRef.current?.cancel();
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
 
       const patchAssistant = (patch: Partial<ChatEntry>) =>
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
+
+      // Reveal streamed text as a smooth "fast typing" animation rather than snapping in whole
+      // network chunks. It writes straight into this assistant entry's content.
+      const reveal = createSmoothReveal((text) => patchAssistant({ content: text }));
+      revealRef.current = reveal;
 
       // Track activity locally so the finished list can be attached to the reply entry
       // (React state updates are async and would be stale when the promise resolves).
@@ -420,21 +433,23 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
               }
               patchAssistant({ toolActivity: activity.map((a) => ({ ...a })) });
             },
-            onDelta: (delta) =>
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
-              ),
-            onReset: () => patchAssistant({ content: '' }),
+            onDelta: (delta) => reveal.push(delta),
+            onReset: () => reveal.reset(),
           },
         );
+        // Attach the metadata now, but let the reveal finish typing the (sanitized) final text
+        // so the reply lands smoothly instead of snapping to the full string.
         patchAssistant({
-          content: reply.content,
           failed: false,
           ...(playersMentioned?.length ? { playersMentioned } : {}),
           ...(sourcesCited?.length ? { sourcesCited } : {}),
           ...(activity.length ? { toolActivity: activity } : {}),
         });
+        await reveal.finish(reply.content);
       } catch (err) {
+        // Stop the typing loop first: on abort it snaps to whatever streamed; below we may
+        // replace that with the error copy, so cancel must run before we set a terminal state.
+        reveal.cancel();
         if (isAbortError(err)) {
           setMessages((prev) => {
             const last = prev.find((m) => m.id === assistantId);
@@ -447,6 +462,7 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
           patchAssistant({ content: ERROR_REPLY, failed: true });
         }
       } finally {
+        if (revealRef.current === reveal) revealRef.current = null;
         if (abortRef.current === ac) {
           abortRef.current = null;
           setIsRunning(false);

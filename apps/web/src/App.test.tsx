@@ -63,9 +63,7 @@ describe('App shell', () => {
     renderApp('/chat');
 
     expect(await screen.findByText('Bronx Bombers')).toBeInTheDocument();
-    expect(
-      screen.getByLabelText("Bronx Bombers' Fantasy Baseball Co-Manager"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Bronx Bombers' Fantasy Baseball Co-Manager")).toBeInTheDocument();
     expect(screen.getByText('The Show (2026)')).toBeInTheDocument();
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
   });
@@ -80,18 +78,24 @@ describe('App shell', () => {
 
     // The /chat chunk now bundles assistant-ui, so allow extra time for the lazy import.
     expect(
-      await screen.findByPlaceholderText('Ask a question about your team…', undefined, { timeout: 5000 }),
+      await screen.findByPlaceholderText('Ask a question about your team…', undefined, {
+        timeout: 5000,
+      }),
     ).toBeInTheDocument();
     expect(screen.queryByText('Connect your Yahoo account')).not.toBeInTheDocument();
   });
 
-  it('does not show the chat composer to guests', async () => {
+  it('shows guests a Yahoo sign-in hero instead of the chat composer', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue({ authenticated: false });
     renderApp('/chat');
 
-    expect(await screen.findByText('Connect your Yahoo account')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('Ask a question about your team…')).not.toBeInTheDocument();
-    expect(screen.queryByText('TheShowGPT')).not.toBeInTheDocument();
+    const cta = await screen.findByRole('link', { name: 'Sign in with Yahoo' });
+    expect(cta).toHaveAttribute('href', '/auth/yahoo');
+    // The signed-out hero previews the product by name; only the composer stays gated.
+    expect(screen.getByText('TheShowGPT')).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText('Ask a question about your team…'),
+    ).not.toBeInTheDocument();
   });
 
   it('lets authed users switch leagues and sign out from the user menu', async () => {

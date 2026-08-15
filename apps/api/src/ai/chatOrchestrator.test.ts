@@ -3,6 +3,7 @@ import { MockFantasyProvider } from '../fantasyProvider.mock.js';
 import type { YahooTokens } from '../tokenStore.js';
 import {
   looksLikeLeakedToolCall,
+  looksLikeStalledPlan,
   runChat,
   stripLeakedToolJson,
   stripLeakedToolSyntax,
@@ -169,6 +170,35 @@ describe('runChat orchestrator', () => {
     expect(onResetAssistant).toHaveBeenCalled();
   });
 
+  it('drops a stalled "I\'ll search..." plan and retries until it delivers the real answer', async () => {
+    const llm = new ScriptedLlm([
+      // Round 1: the model narrates a plan (plus a bare query line) but makes no tool call.
+      {
+        content:
+          "I'll pull rest-of-season projection pages for the top free agents, then match them to your needs.\n" +
+          '"Casey Schmitt rest of season projections August 2026 FantasyPros"',
+        toolCalls: [],
+      },
+      // Round 2 (after the nudge): it actually issues the tool call it had only described.
+      { content: '', toolCalls: [{ id: '1', name: 'get_league_standings', arguments: '{}' }] },
+      // Round 3: the complete analysis.
+      { content: '**Grab [[p:Casey Schmitt]].** Best ROS value on the wire.', toolCalls: [] },
+    ]);
+    const onResetAssistant = vi.fn();
+    const res = await runChat({
+      messages: [{ role: 'user', content: 'best free agents to research?' }],
+      leagueId: LEAGUE,
+      tokens,
+      provider: new MockFantasyProvider(),
+      llm,
+      onResetAssistant,
+    });
+    expect(res.message.content).toBe('**Grab Casey Schmitt.** Best ROS value on the wire.');
+    expect(res.message.content).not.toContain("I'll pull");
+    expect(res.toolsUsed).toContain('get_league_standings');
+    expect(onResetAssistant).toHaveBeenCalled();
+  });
+
   it('sanitizes a leaked tool-call tail if it survives into the final answer', async () => {
     // Model keeps leaking every round; the forced tool-less final answer still carries a tail.
     const alwaysLeaks: LlmProvider = {
@@ -254,5 +284,28 @@ describe('leaked tool-call detection and sanitizing', () => {
       'to=functions',
     );
     expect(stripLeakedToolSyntax('Clean answer, no leak.')).toBe('Clean answer, no leak.');
+  });
+});
+
+describe('stalled-plan detection', () => {
+  it('flags intent-only preambles and bare query lines', () => {
+    expect(looksLikeStalledPlan("I'll pull rest-of-season projection pages for your wire.")).toBe(
+      true,
+    );
+    expect(looksLikeStalledPlan('Proceeding to gather ROS pages now.')).toBe(true);
+    expect(looksLikeStalledPlan('Searching the web for his current role...')).toBe(true);
+    expect(
+      looksLikeStalledPlan('"Joc Pederson rest of season projections August 2026 FantasyPros"'),
+    ).toBe(true);
+  });
+
+  it('does not flag a finished, structured answer (even if it says "I\'ll check back")', () => {
+    expect(
+      looksLikeStalledPlan(
+        "**Add Casey Schmitt.**\n\n### Why\n- Strong ROS projection.\n\nI'll check back after tonight.",
+      ),
+    ).toBe(false);
+    expect(looksLikeStalledPlan('He owns the ninth inning now, so start him.')).toBe(false);
+    expect(looksLikeStalledPlan('')).toBe(false);
   });
 });
