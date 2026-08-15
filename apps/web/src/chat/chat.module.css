@@ -1144,8 +1144,26 @@ details.toolBubble .toolBubbleHead:hover {
     padding-bottom: 0.5rem;
   }
 
+  /* Top-align the empty/guest hero so a tall prompt list can't push the greeting
+     off the top when the dock is vertically centered. */
+  .chat[data-empty] {
+    justify-content: flex-start;
+  }
+
   .chat[data-empty] .dock {
     background: none;
+    flex: 1 1 0%;
+    min-height: 0;
+    padding-top: 0.9rem;
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Greeting + composer/CTA stay put at the top (always visible); only the prompt
+     list below them scrolls. */
+  .chat[data-empty] .greeting,
+  .chat[data-empty] .composer,
+  .chat[data-empty] .signIn {
+    flex-shrink: 0;
   }
 
   .suggestions {
@@ -1158,10 +1176,19 @@ details.toolBubble .toolBubbleHead:hover {
     padding: 0 0.15rem 0.15rem;
   }
 
+  /* Prompt list becomes the one scrollable region: takes the space left under the
+     greeting + composer and scrolls (vertically) instead of growing the hero. */
   .chat[data-empty] .suggestions {
+    flex: 0 1 auto;
+    min-height: 0;
     flex-wrap: wrap;
+    align-content: flex-start;
     justify-content: center;
     overflow-x: visible;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin: 0.65rem 0 0;
+    padding-bottom: 0.5rem;
   }
 
   .suggestions::-webkit-scrollbar {
