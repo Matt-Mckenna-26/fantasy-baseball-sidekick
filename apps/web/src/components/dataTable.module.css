@@ -512,6 +512,42 @@ thead .stickyColSecond {
   .tabToolbar .tabs {
     flex: 1 1 auto;
   }
+
+  /* Plain data tables (Standings, Transactions) get no desktop->mobile squeeze on
+     their own, so at phone widths the 6 standings columns overflowed and forced a
+     wide horizontal scroll (the "bleed"). Shrink type/padding and slim the sticky
+     identity columns so the whole table fits one iPhone viewport. */
+  .table {
+    font-size: 0.8rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.4rem 0.4rem;
+  }
+
+  .table thead th {
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* Slimmer rank + team sticky columns leave room for the stat columns. The team
+     name column absorbs the table's slack (so no dead space) and ellipsizes when a
+     long name would otherwise push the table wide. */
+  .stickyCol {
+    min-width: 2.5rem;
+  }
+
+  .stickyColSecond {
+    left: 2.5rem;
+    min-width: 5.5rem;
+  }
+
+  .table .posBadge {
+    min-width: 1.7rem;
+    padding: 0.1rem 0.28rem;
+    font-size: 0.72rem;
+  }
 }
 
 .table {

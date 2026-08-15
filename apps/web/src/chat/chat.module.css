@@ -1174,6 +1174,14 @@ details.toolBubble .toolBubbleHead:hover {
     padding: 0.6rem 1rem;
   }
 
+  /* Empty/guest hero wraps its chips (not the docked scroll strip), so let long
+     full-sentence prompts shrink and wrap inside the pill instead of sizing to the
+     whole sentence and bleeding past the viewport edge. */
+  .chat[data-empty] .suggestion {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
   .inputShell {
     padding: 0.38rem 0.38rem 0.38rem 1.1rem;
     border-radius: 2rem;
