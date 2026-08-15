@@ -97,19 +97,47 @@ export function snapshotTransactions(dto: LeagueTransactionsResponse): {
   };
 }
 
-export function snapshotMatchups(dto: LeagueMatchupsResponse): {
+/**
+ * Head-to-head matchups for a week. `won/lost/tied` are the category counts; when the week's
+ * per-team totals are supplied (`teamStats`, same fantasy week), each side also gets a `stats`
+ * map of the ACTUAL per-category totals (e.g. HR: 14) joined by teamId - so the model can judge
+ * a matchup on the raw numbers and margins, not just who is currently ahead in each category.
+ */
+export function snapshotMatchups(
+  dto: LeagueMatchupsResponse,
+  teamStats?: LeagueTeamStatsResponse,
+): {
   week: number;
-  matchups: { teams: { team: string; won: number; lost?: number; tied?: number }[] }[];
+  categories?: string[];
+  matchups: {
+    teams: {
+      team: string;
+      won: number;
+      lost?: number;
+      tied?: number;
+      stats?: Record<string, number | string>;
+    }[];
+  }[];
 } {
+  const columns = teamStats ? [...teamStats.battingColumns, ...teamStats.pitchingColumns] : [];
+  const statsByTeamId = new Map<string, Record<string, number | string>>();
+  if (teamStats) {
+    for (const t of teamStats.teams) statsByTeamId.set(t.teamId, statsByLabel(columns, t.stats));
+  }
   return {
     week: dto.week,
+    ...(columns.length > 0 ? { categories: columns.map((c) => c.label) } : {}),
     matchups: dto.matchups.map((m) => ({
-      teams: m.teams.map((t) => ({
-        team: t.teamName,
-        won: t.categoriesWon,
-        ...(t.categoriesLost !== undefined ? { lost: t.categoriesLost } : {}),
-        ...(t.categoriesTied !== undefined ? { tied: t.categoriesTied } : {}),
-      })),
+      teams: m.teams.map((t) => {
+        const stats = statsByTeamId.get(t.teamId);
+        return {
+          team: t.teamName,
+          won: t.categoriesWon,
+          ...(t.categoriesLost !== undefined ? { lost: t.categoriesLost } : {}),
+          ...(t.categoriesTied !== undefined ? { tied: t.categoriesTied } : {}),
+          ...(stats && Object.keys(stats).length > 0 ? { stats } : {}),
+        };
+      }),
     })),
   };
 }
@@ -222,7 +250,11 @@ export function snapshotValueScores(
 } {
   const index = new Map<
     string,
-    { line: PlayerStatsResponse['batting']['players'][number]; columns: StatColumn[]; pos: 'B' | 'P' }
+    {
+      line: PlayerStatsResponse['batting']['players'][number];
+      columns: StatColumn[];
+      pos: 'B' | 'P';
+    }
   >();
   for (const [pos, table] of [
     ['B', dto.batting],

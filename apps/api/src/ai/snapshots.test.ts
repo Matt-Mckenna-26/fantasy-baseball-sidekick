@@ -33,6 +33,21 @@ describe('AI snapshots', () => {
     const snap = snapshotMatchups(await provider.getLeagueMatchups(tokens, LEAGUE));
     expect(snap.week).toBeGreaterThan(0);
     expect(snap.matchups[0]?.teams[0]).toHaveProperty('won');
+    // Without team-week stats the snapshot stays counts-only (no raw category totals).
+    expect(snap.categories).toBeUndefined();
+    expect(snap.matchups[0]?.teams[0]).not.toHaveProperty('stats');
+  });
+
+  it('matchups snapshot merges each team\u2019s raw per-category totals for the week', async () => {
+    const dto = await provider.getLeagueMatchups(tokens, LEAGUE);
+    const teamStats = await provider.getLeagueTeamStats(tokens, LEAGUE, dto.week);
+    const snap = snapshotMatchups(dto, teamStats);
+    expect(snap.categories).toContain('HR');
+    const team = snap.matchups[0]?.teams[0];
+    expect(team).toHaveProperty('won');
+    // The actual totals (not just who's ahead) are now on each side, joined by teamId.
+    expect(team?.stats).toBeDefined();
+    expect(team?.stats).toHaveProperty('HR');
   });
 
   it('rosters snapshot lists players as "Name (POS)", carries teamId, and caps size', async () => {
@@ -43,7 +58,9 @@ describe('AI snapshots', () => {
   });
 
   it('team stats snapshot maps stat keys to labels', async () => {
-    const snap = snapshotTeamPlayers(await provider.getTeamRangeStats(tokens, LEAGUE, '1', 'season'));
+    const snap = snapshotTeamPlayers(
+      await provider.getTeamRangeStats(tokens, LEAGUE, '1', 'season'),
+    );
     expect(snap.players[0]).toHaveProperty('name');
     // At least one rostered player carries labelled category values.
     const withStats = snap.players.find((p) => Object.keys(p.stats).length > 0);
@@ -51,7 +68,9 @@ describe('AI snapshots', () => {
   });
 
   it('league team stats snapshot exposes labelled columns', async () => {
-    const snap = snapshotLeagueTeamStats(await provider.getLeagueTeamStats(tokens, LEAGUE, 'season'));
+    const snap = snapshotLeagueTeamStats(
+      await provider.getLeagueTeamStats(tokens, LEAGUE, 'season'),
+    );
     expect(snap.columns).toContain('HR');
     expect(snap.teams[0]?.stats).toHaveProperty('HR');
   });

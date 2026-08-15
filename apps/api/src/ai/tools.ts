@@ -1,6 +1,7 @@
 import {
   statRangeSchema,
   teamStatBucketSchema,
+  type LeagueTeamStatsResponse,
   type StatRange,
   type TeamStatBucket,
 } from '@fcm/contracts';
@@ -109,16 +110,41 @@ export function buildTools(deps: ToolDeps = {}): ChatTool[] {
     {
       name: 'get_matchups',
       description:
-        'Head-to-head matchups for the current fantasy week, with per-team categories won/lost/tied. Use for weekly outlook and playoff-race questions.',
+        "Head-to-head matchups for the current fantasy week: per-team categories won/lost/tied AND each team's ACTUAL per-category totals for the week (e.g. HR: 14, ERA: 3.20), so you can weigh raw numbers and margins - not just who's ahead. Use for weekly outlook and playoff-race questions.",
       parameters: { type: 'object', properties: {}, additionalProperties: false },
       needsLeague: true,
       async run(_args, ctx) {
         const leagueId = requireLeague(ctx);
-        return ctx.cache.wrap(`${leagueId}:matchups`, TTL.matchups, async () =>
-          snapshotMatchups(
-            await ctx.provider.getLeagueMatchups(ctx.tokens, leagueId, ctx.onTokensRefreshed),
-          ),
-        );
+        return ctx.cache.wrap(`${leagueId}:matchups`, TTL.matchups, async () => {
+          const dto = await ctx.provider.getLeagueMatchups(
+            ctx.tokens,
+            leagueId,
+            ctx.onTokensRefreshed,
+          );
+          // Merge each team's raw per-category totals for the matchup week so the model sees
+          // the actual numbers, not just the category-won counts. Reuses get_league_team_stats'
+          // cache entry (same `${leagueId}:teamStats:${week}` key). Best-effort: roto/offseason
+          // leagues have no weekly scoreboard, so fall back to the counts-only snapshot.
+          let teamStats: LeagueTeamStatsResponse | undefined;
+          if (dto.week > 0) {
+            try {
+              teamStats = await ctx.cache.wrap(
+                `${leagueId}:teamStats:${dto.week}`,
+                TTL.teamStats,
+                () =>
+                  ctx.provider.getLeagueTeamStats(
+                    ctx.tokens,
+                    leagueId,
+                    dto.week,
+                    ctx.onTokensRefreshed,
+                  ),
+              );
+            } catch {
+              teamStats = undefined;
+            }
+          }
+          return snapshotMatchups(dto, teamStats);
+        });
       },
     },
     {
@@ -312,7 +338,12 @@ export function buildTools(deps: ToolDeps = {}): ChatTool[] {
               loadRostered: (r) =>
                 ctx.cache.wrap(`${leagueId}:sgpt:${r}`, TTL.playerStats, async () =>
                   withSgptRank(
-                    await ctx.provider.getPlayerStats(ctx.tokens, leagueId, r, ctx.onTokensRefreshed),
+                    await ctx.provider.getPlayerStats(
+                      ctx.tokens,
+                      leagueId,
+                      r,
+                      ctx.onTokensRefreshed,
+                    ),
                   ),
                 ),
             },
