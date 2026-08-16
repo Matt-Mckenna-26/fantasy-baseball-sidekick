@@ -24,6 +24,8 @@ interface PlayerFocusContextValue {
   targets: PlayerFocusTarget[];
   openPlayerFocus: (target: PlayerFocusTarget) => void;
   closePlayerFocus: (playerId: string) => void;
+  /** Close every open card (e.g. after navigating away to chat). */
+  closeAllPlayerFocus: () => void;
   /** Selected league id + Last-14 support, resolved from the session for all cards. */
   leagueId: string | undefined;
   supportsLast14: boolean;
@@ -69,6 +71,8 @@ export function PlayerFocusProvider({ children }: { children: ReactNode }) {
     setTargets((prev) => prev.filter((t) => t.playerId !== playerId));
   }, []);
 
+  const closeAllPlayerFocus = useCallback(() => setTargets([]), []);
+
   const getTrendWindows = useCallback(
     (id: string): PlayerStatsByRange => trendCache.current.get(id) ?? {},
     [],
@@ -82,13 +86,14 @@ export function PlayerFocusProvider({ children }: { children: ReactNode }) {
       targets,
       openPlayerFocus,
       closePlayerFocus,
+      closeAllPlayerFocus,
       leagueId,
       supportsLast14,
       pool,
       getTrendWindows,
       setTrendWindows,
     }),
-    [targets, openPlayerFocus, closePlayerFocus, leagueId, supportsLast14, pool, getTrendWindows, setTrendWindows],
+    [targets, openPlayerFocus, closePlayerFocus, closeAllPlayerFocus, leagueId, supportsLast14, pool, getTrendWindows, setTrendWindows],
   );
 
   return <PlayerFocusContext.Provider value={value}>{children}</PlayerFocusContext.Provider>;

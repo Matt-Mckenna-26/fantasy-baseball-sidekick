@@ -109,20 +109,25 @@ function SparkleIcon() {
   );
 }
 
-/** Opens chat on a fresh thread with a research prompt for this player. */
+/** Opens chat on a fresh thread with a research prompt for this player, then dismisses cards. */
 export function AskTheShowGptButton({
   playerName,
   onMyTeam,
+  onAfterNavigate,
 }: {
   playerName: string;
   onMyTeam: boolean;
+  onAfterNavigate: () => void;
 }) {
   const navigate = useNavigate();
   return (
     <button
       type="button"
       className={styles.askBtn}
-      onClick={() => navigate(chatAskPath(playerResearchPrompt(playerName, onMyTeam)))}
+      onClick={() => {
+        navigate(chatAskPath(playerResearchPrompt(playerName, onMyTeam)));
+        onAfterNavigate();
+      }}
       onMouseDown={(e) => e.stopPropagation()}
       aria-label={`Ask TheShowGPT about ${playerName}`}
       title={`Ask TheShowGPT about ${playerName}`}
@@ -471,7 +476,7 @@ function clampPos(x: number, y: number): { x: number; y: number } {
  */
 function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: number }) {
   const { session } = useSession();
-  const { pool, leagueId, supportsLast14, closePlayerFocus, getTrendWindows, setTrendWindows } =
+  const { pool, leagueId, supportsLast14, closePlayerFocus, closeAllPlayerFocus, getTrendWindows, setTrendWindows } =
     usePlayerFocus();
 
   const playerId = target.playerId;
@@ -848,7 +853,11 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
                 {status ? <span className={styles.statusBadge}>{status}</span> : null}
               </span>
             </div>
-            <AskTheShowGptButton playerName={target.fullName} onMyTeam={onMyTeam} />
+            <AskTheShowGptButton
+              playerName={target.fullName}
+              onMyTeam={onMyTeam}
+              onAfterNavigate={closeAllPlayerFocus}
+            />
           </div>
 
           {columns.length > 0 ? (
