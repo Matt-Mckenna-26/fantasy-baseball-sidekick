@@ -101,6 +101,23 @@ describe('API app', () => {
     expect(res.body.error.code).toBe('bad_request');
   });
 
+  it('GET /api/mlb/players/gamelog returns a mock log (public, mock mode)', async () => {
+    const { app } = buildApp();
+    const res = await request(app).get('/api/mlb/players/gamelog').query({ name: 'Aaron Judge' });
+    expect(res.status).toBe(200);
+    expect(res.body.player).toBe('Aaron Judge');
+    expect(res.body.matched).toBe(true);
+    expect(res.body.batting.length).toBeGreaterThan(0);
+    expect(res.body.batting[0].hr).toBeDefined();
+  });
+
+  it('GET /api/mlb/players/gamelog rejects a missing name (400)', async () => {
+    const { app } = buildApp();
+    const res = await request(app).get('/api/mlb/players/gamelog');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('bad_request');
+  });
+
   it('GET /auth/status reports not authenticated for a fresh session', async () => {
     const { app } = buildApp();
     const res = await request(app).get('/auth/status');

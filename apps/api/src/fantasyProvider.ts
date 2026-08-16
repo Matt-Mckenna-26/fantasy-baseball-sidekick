@@ -72,6 +72,8 @@ export interface FantasyProvider {
     tokens: YahooTokens,
     leagueId: string,
     onTokensRefreshed?: OnTokensRefreshed,
+    /** Optional YYYY-MM-DD; when set, each team's lineup is the snapshot for that game day. */
+    date?: string,
   ): Promise<LeagueRostersResponse>;
   getPlayerStats(
     tokens: YahooTokens,
@@ -85,6 +87,8 @@ export interface FantasyProvider {
     teamId: string,
     range: StatRange,
     onTokensRefreshed?: OnTokensRefreshed,
+    /** Optional YYYY-MM-DD; only applied when `range` is 'today' (that game day's line). */
+    date?: string,
   ): Promise<TeamStatsResponse>;
   getTeamWeekStats(
     tokens: YahooTokens,
@@ -915,10 +919,15 @@ export function leagueWeekNumbers(league: {
 }
 
 /** URL for a league players collection filtered by keys, with stats over `range`. */
-function leaguePlayersStatsUrl(leagueId: string, playerKeys: string[], range: StatRange): string {
+function leaguePlayersStatsUrl(
+  leagueId: string,
+  playerKeys: string[],
+  range: StatRange,
+  date?: string,
+): string {
   return (
     `https://fantasysports.yahooapis.com/fantasy/v2/league/${leagueId}` +
-    `/players;player_keys=${playerKeys.join(',')}${rangeToStatsSegment(range)}`
+    `/players;player_keys=${playerKeys.join(',')}${rangeToStatsSegment(range, date)}`
   );
 }
 
@@ -928,10 +937,10 @@ function easternDateString(now = new Date()): string {
 }
 
 /** Map our range to the Yahoo `/stats;type=...` path segment. */
-function rangeToStatsSegment(range: StatRange): string {
+function rangeToStatsSegment(range: StatRange, date?: string): string {
   switch (range) {
     case 'today':
-      return `/stats;type=date;date=${easternDateString()}`;
+      return `/stats;type=date;date=${date ?? easternDateString()}`;
     case 'last7':
       return '/stats;type=lastweek';
     case 'last30':
@@ -945,6 +954,15 @@ function rangeToStatsSegment(range: StatRange): string {
       // substitutes 'season' for scaffolding). Guard so a misconfiguration fails loudly.
       throw new Error(`${range} is not supported by the Yahoo stats source.`);
   }
+}
+
+/** Today's roster, or the snapshot for a specific YYYY-MM-DD game day. */
+function loadTeamRoster(
+  yf: ReturnType<typeof createYahooClient>,
+  teamKey: string,
+  date?: string,
+): Promise<YahooTeam> {
+  return date ? yf.roster.fetch(teamKey, date) : yf.team.roster(teamKey);
 }
 
 export class YahooFantasyProvider implements FantasyProvider {
@@ -974,6 +992,7 @@ export class YahooFantasyProvider implements FantasyProvider {
     tokens: YahooTokens,
     leagueId: string,
     onTokensRefreshed?: OnTokensRefreshed,
+    date?: string,
   ): Promise<LeagueRostersResponse> {
     const yf = createYahooClient(this.config, onTokensRefreshed);
     yf.setUserToken(tokens.accessToken);
@@ -983,13 +1002,17 @@ export class YahooFantasyProvider implements FantasyProvider {
     const teamList = league.teams ?? [];
     const teams = await Promise.all(
       teamList.map(async (t) => {
-        const roster = mapTeamToRoster(await yf.team.roster(t.team_key));
-        const logoUrl = extractTeamLogoUrl(t) ?? roster.logoUrl;
-        return logoUrl && logoUrl !== roster.logoUrl ? { ...roster, logoUrl } : roster;
+        const roster = mapTeamToRoster(await loadTeamRoster(yf, t.team_key, date));
+        const withDate = date ? { ...roster, coverageDate: date } : roster;
+        const logoUrl = extractTeamLogoUrl(t) ?? withDate.logoUrl;
+        return logoUrl && logoUrl !== withDate.logoUrl ? { ...withDate, logoUrl } : withDate;
       }),
     );
 
-    console.warn(`[live] rosters: mapped ${teams.length} teams for league ${leagueId}`);
+    console.warn(
+      `[live] rosters: mapped ${teams.length} teams for league ${leagueId}` +
+        (date ? ` date=${date}` : ''),
+    );
     return leagueRostersResponseSchema.parse({ leagueId, teams });
   }
 
@@ -1103,6 +1126,7 @@ export class YahooFantasyProvider implements FantasyProvider {
     teamId: string,
     range: StatRange,
     onTokensRefreshed?: OnTokensRefreshed,
+    date?: string,
   ): Promise<TeamStatsResponse> {
     const yf = createYahooClient(this.config, onTokensRefreshed);
     yf.setUserToken(tokens.accessToken);
@@ -1115,7 +1139,8 @@ export class YahooFantasyProvider implements FantasyProvider {
     const columns = [...battingColumns, ...pitchingColumns];
 
     const teamKey = `${leagueId}.t.${teamId}`;
-    const team = await yf.team.roster(teamKey);
+    const asOf = range === 'today' ? date : undefined;
+    const team = await loadTeamRoster(yf, teamKey, asOf);
     const playerKeys = (team.roster ?? [])
       .map((p) => p.player_key)
       .filter((k): k is string => typeof k === 'string' && k.length > 0);
@@ -1138,13 +1163,15 @@ export class YahooFantasyProvider implements FantasyProvider {
     // yf.api() appends ?format=json, so pass no query string.
     const statChunks = await Promise.all(
       chunk(playerKeys, PLAYER_KEY_CHUNK).map((keys) =>
-        yf.api<RawLeaguePlayersResponse>('GET', leaguePlayersStatsUrl(leagueId, keys, range)),
+        yf.api<RawLeaguePlayersResponse>('GET', leaguePlayersStatsUrl(leagueId, keys, range, asOf)),
       ),
     );
     const players = statChunks.flatMap((raw) => parseLeaguePlayersStats(raw, columns));
 
     console.warn(
-      `[live] team-stats: team ${teamId} range=${range} -> ${players.length} players x ${columns.length} cols`,
+      `[live] team-stats: team ${teamId} range=${range}` +
+        (asOf ? ` date=${asOf}` : '') +
+        ` -> ${players.length} players x ${columns.length} cols`,
     );
     return teamStatsResponseSchema.parse({
       leagueId,

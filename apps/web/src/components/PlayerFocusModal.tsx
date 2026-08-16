@@ -6,9 +6,20 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import type { PlayerNewsItem, PlayerStatsResponse, StatRange, StatTable } from '@fcm/contracts';
-import { getAdvancedLeagueStats, getPlayerNews, getPlayerStats } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+import type {
+  PlayerGameLogBatting,
+  PlayerGameLogPitching,
+  PlayerGameLogResponse,
+  PlayerNewsItem,
+  PlayerStatsResponse,
+  StatRange,
+  StatTable,
+} from '@fcm/contracts';
+import { getAdvancedLeagueStats, getPlayerGameLog, getPlayerNews, getPlayerStats } from '../api/client';
 import { usePlayerFocus, type PlayerFocusTarget } from '../context/PlayerFocusContext';
+import { useSession } from '../context/SessionContext';
+import { chatAskPath, playerIsOnMyTeam, playerResearchPrompt } from '../lib/chatAsk';
 import { usePlayerTrend } from '../hooks/usePlayerTrend';
 import { useIsNarrow } from '../hooks/useIsNarrow';
 import { buildPlayerMetricTrend, playerTrendWindows } from '../lib/playerTrend';
@@ -80,6 +91,46 @@ function snapZoneFor(x: number, y: number): Rect | null {
   if (nearR) return { x: rightX, y: SNAP_GAP, w: snapW, h: fullH };
   if (nearT) return { x: SNAP_GAP, y: SNAP_GAP, w: fullW, h: fullH };
   return null;
+}
+
+/** Same sparkle used on the TheShowGPT nav item, so the card CTA is recognizable. */
+function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className={styles.askIcon}>
+      <path
+        fill="currentColor"
+        d="M8 0.5 9.4 5.8 14.5 7.2 9.4 8.6 8 13.9 6.6 8.6 1.5 7.2 6.6 5.8 8 0.5Z"
+      />
+      <path
+        fill="currentColor"
+        d="M12.8 1.2 13.3 2.9 15 3.4 13.3 3.9 12.8 5.6 12.3 3.9 10.6 3.4 12.3 2.9 12.8 1.2Z"
+      />
+    </svg>
+  );
+}
+
+/** Opens chat on a fresh thread with a research prompt for this player. */
+export function AskTheShowGptButton({
+  playerName,
+  onMyTeam,
+}: {
+  playerName: string;
+  onMyTeam: boolean;
+}) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      className={styles.askBtn}
+      onClick={() => navigate(chatAskPath(playerResearchPrompt(playerName, onMyTeam)))}
+      onMouseDown={(e) => e.stopPropagation()}
+      aria-label={`Ask TheShowGPT about ${playerName}`}
+      title={`Ask TheShowGPT about ${playerName}`}
+    >
+      <SparkleIcon />
+      <span>Ask TheShowGPT</span>
+    </button>
+  );
 }
 
 /** Initials fallback for the prominent header avatar (mirrors EntityAvatar). */
@@ -224,6 +275,172 @@ export function AdvancedPanel({
   );
 }
 
+function formatLogDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function formatOpp(line: { opponent?: string; home?: boolean }): string {
+  if (!line.opponent) return '—';
+  return line.home === false ? `@ ${line.opponent}` : `vs ${line.opponent}`;
+}
+
+function BattingLogTable({ lines }: { lines: PlayerGameLogBatting[] }) {
+  return (
+    <div className={styles.logWrap}>
+      <table className={styles.logTable}>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Opp</th>
+            <th className={styles.logNum}>AB</th>
+            <th className={styles.logNum}>R</th>
+            <th className={styles.logNum}>H</th>
+            <th className={styles.logNum}>HR</th>
+            <th className={styles.logNum}>RBI</th>
+            <th className={styles.logNum}>BB</th>
+            <th className={styles.logNum}>SO</th>
+            <th className={styles.logNum}>SB</th>
+            <th className={styles.logNum}>AVG</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={`${line.date}-${line.gamePk ?? line.opponent ?? ''}-${line.ab}-${line.h}`}>
+              <td>{formatLogDate(line.date)}</td>
+              <td>{formatOpp(line)}</td>
+              <td className={styles.logNum}>{line.ab}</td>
+              <td className={styles.logNum}>{line.r}</td>
+              <td className={styles.logNum}>{line.h}</td>
+              <td className={styles.logNum}>{line.hr}</td>
+              <td className={styles.logNum}>{line.rbi}</td>
+              <td className={styles.logNum}>{line.bb}</td>
+              <td className={styles.logNum}>{line.so}</td>
+              <td className={styles.logNum}>{line.sb}</td>
+              <td className={styles.logNum}>{line.avg ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PitchingLogTable({ lines }: { lines: PlayerGameLogPitching[] }) {
+  return (
+    <div className={styles.logWrap}>
+      <table className={styles.logTable}>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Opp</th>
+            <th>Dec</th>
+            <th className={styles.logNum}>IP</th>
+            <th className={styles.logNum}>H</th>
+            <th className={styles.logNum}>ER</th>
+            <th className={styles.logNum}>BB</th>
+            <th className={styles.logNum}>K</th>
+            <th className={styles.logNum}>HR</th>
+            <th className={styles.logNum}>P</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={`${line.date}-${line.gamePk ?? line.opponent ?? ''}-${line.ip}-${line.so}`}>
+              <td>{formatLogDate(line.date)}</td>
+              <td>{formatOpp(line)}</td>
+              <td>{line.decision ?? '—'}</td>
+              <td className={styles.logNum}>{line.ip}</td>
+              <td className={styles.logNum}>{line.h}</td>
+              <td className={styles.logNum}>{line.er}</td>
+              <td className={styles.logNum}>{line.bb}</td>
+              <td className={styles.logNum}>{line.so}</td>
+              <td className={styles.logNum}>{line.hr}</td>
+              <td className={styles.logNum}>{line.pitches ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Recent per-game stat lines for the focused player. Fetched independently so the
+ * rest of the card renders immediately. Fails soft to a short note.
+ */
+export function GameLogPanel({
+  fullName,
+  mlbTeamAbbr,
+  isPitching,
+}: {
+  fullName: string;
+  mlbTeamAbbr?: string;
+  isPitching: boolean;
+}) {
+  const [data, setData] = useState<PlayerGameLogResponse | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  useEffect(() => {
+    let stale = false;
+    setStatus('loading');
+    setData(null);
+    getPlayerGameLog(fullName, mlbTeamAbbr)
+      .then((res) => {
+        if (stale) return;
+        setData(res);
+        setStatus('ready');
+      })
+      .catch(() => {
+        if (!stale) setStatus('error');
+      });
+    return () => {
+      stale = true;
+    };
+  }, [fullName, mlbTeamAbbr]);
+
+  const primary = isPitching ? data?.pitching : data?.batting;
+  const secondary = isPitching ? data?.batting : data?.pitching;
+  const showPrimary = (primary?.length ?? 0) > 0;
+  const showSecondary = (secondary?.length ?? 0) > 0;
+
+  return (
+    <section className={styles.logSection}>
+      <h3 className={styles.sectionTitle}>Recent games</h3>
+      {status === 'loading' ? (
+        <p className={styles.note}>Loading game log…</p>
+      ) : status === 'error' ? (
+        <p className={styles.note}>Couldn&apos;t load recent games.</p>
+      ) : !data?.matched ? (
+        <p className={styles.note}>No game log available.</p>
+      ) : !showPrimary && !showSecondary ? (
+        <p className={styles.note}>No recent games in the log.</p>
+      ) : (
+        <>
+          {showPrimary ? (
+            isPitching ? (
+              <PitchingLogTable lines={data.pitching} />
+            ) : (
+              <BattingLogTable lines={data.batting} />
+            )
+          ) : null}
+          {showSecondary ? (
+            <>
+              <h4 className={styles.logSubTitle}>{isPitching ? 'Batting' : 'Pitching'}</h4>
+              {isPitching ? (
+                <BattingLogTable lines={data.batting} />
+              ) : (
+                <PitchingLogTable lines={data.pitching} />
+              )}
+            </>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Self-sized circular headshot (or initials) for the prominent card header. */
 function CardAvatar({ fullName, headshotUrl }: { fullName: string; headshotUrl?: string }) {
   const [failed, setFailed] = useState(false);
@@ -253,6 +470,7 @@ function clampPos(x: number, y: number): { x: number; y: number } {
  * window is chosen by the Range chips - both grouped as one control cluster.
  */
 function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: number }) {
+  const { session } = useSession();
   const { pool, leagueId, supportsLast14, closePlayerFocus, getTrendWindows, setTrendWindows } =
     usePlayerFocus();
 
@@ -460,6 +678,9 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
   const status = line?.player.status;
   const teamAbbr = target.mlbTeamAbbr ?? line?.player.mlbTeamAbbr;
   const owner = line?.owner;
+  const rosterOwner = seasonTable.lineById.get(playerId)?.owner ?? owner;
+  const myTeamName = session.status === 'connected' ? session.selectedLeague?.teamName : undefined;
+  const onMyTeam = playerIsOnMyTeam(rosterOwner, myTeamName);
   const hasTrend = metricTrend.rows.length > 0 && trendSeries.length > 0;
 
   const canExportCard = Boolean(line && rangeTable);
@@ -627,6 +848,7 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
                 {status ? <span className={styles.statusBadge}>{status}</span> : null}
               </span>
             </div>
+            <AskTheShowGptButton playerName={target.fullName} onMyTeam={onMyTeam} />
           </div>
 
           {columns.length > 0 ? (
@@ -725,6 +947,12 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
                 </section>
 
                 <AdvancedPanel leagueId={leagueId} playerId={playerId} isPitching={isPitching} />
+
+                <GameLogPanel
+                  fullName={target.fullName}
+                  isPitching={isPitching}
+                  {...(teamAbbr ? { mlbTeamAbbr: teamAbbr } : {})}
+                />
 
                 <section className={styles.newsSection}>
                   <h3 className={styles.sectionTitle}>News</h3>

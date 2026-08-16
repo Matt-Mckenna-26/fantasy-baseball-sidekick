@@ -40,8 +40,9 @@ export class MlbStatsProvider implements FantasyProvider {
     tokens: YahooTokens,
     leagueId: string,
     onTokensRefreshed?: OnTokensRefreshed,
+    date?: string,
   ): Promise<LeagueRostersResponse> {
-    return this.base.getLeagueRosters(tokens, leagueId, onTokensRefreshed);
+    return this.base.getLeagueRosters(tokens, leagueId, onTokensRefreshed, date);
   }
   getTeamWeekStats(
     tokens: YahooTokens,
@@ -112,6 +113,7 @@ export class MlbStatsProvider implements FantasyProvider {
     teamId: string,
     range: StatRange,
     onTokensRefreshed?: OnTokensRefreshed,
+    date?: string,
   ): Promise<TeamStatsResponse> {
     const scaffold = await this.base.getTeamRangeStats(
       tokens,
@@ -119,6 +121,7 @@ export class MlbStatsProvider implements FantasyProvider {
       teamId,
       scaffoldRange(range),
       onTokensRefreshed,
+      date,
     );
     // A roster mixes batters and pitchers in one list, each carrying only its own group's
     // columns. Classify by Yahoo position type, then derive hitting values for batters and
@@ -134,18 +137,21 @@ export class MlbStatsProvider implements FantasyProvider {
       fullName: l.player.fullName,
       ...(l.player.mlbTeamAbbr ? { mlbTeamAbbr: l.player.mlbTeamAbbr } : {}),
     });
+    const asOfDate = range === 'today' ? date : undefined;
     const [hitting, pitching] = await Promise.all([
       buildMlbStatValues({
         players: scaffold.players.filter((l) => groups.get(l.player.playerId) !== 'P').map(toMlbPlayer),
         columns: scaffold.battingColumns,
         group: 'hitting',
         range,
+        ...(asOfDate ? { asOfDate } : {}),
       }),
       buildMlbStatValues({
         players: scaffold.players.filter((l) => groups.get(l.player.playerId) !== 'B').map(toMlbPlayer),
         columns: scaffold.pitchingColumns,
         group: 'pitching',
         range,
+        ...(asOfDate ? { asOfDate } : {}),
       }),
     ]);
     const players = scaffold.players.map((l) => {

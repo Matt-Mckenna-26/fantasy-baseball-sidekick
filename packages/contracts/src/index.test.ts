@@ -17,6 +17,7 @@ import {
   mlbGamesResponseSchema,
   mlbBoxScoreResponseSchema,
   playerAdvancedResponseSchema,
+  playerGameLogResponseSchema,
   playerGameKey,
   normalizePlayerName,
   isPitcherRosterSlot,
@@ -363,6 +364,7 @@ describe('contracts schemas', () => {
             bb: 2,
             so: 2,
             hr: 0,
+            pitches: 88,
             era: '5.06',
           },
         ],
@@ -514,5 +516,59 @@ describe('contracts schemas', () => {
         },
       }),
     ).toBe(false);
+  });
+
+  it('parses a player game-log response with batting and pitching lines', () => {
+    const parsed = playerGameLogResponseSchema.parse({
+      player: 'Aaron Judge',
+      matched: true,
+      batting: [
+        {
+          date: '2026-07-04',
+          opponent: 'BOS',
+          home: true,
+          ab: 4,
+          r: 2,
+          h: 3,
+          doubles: 1,
+          triples: 0,
+          hr: 1,
+          rbi: 3,
+          bb: 1,
+          so: 0,
+          sb: 1,
+          avg: '.750',
+        },
+      ],
+      pitching: [
+        {
+          date: '2026-07-03',
+          opponent: 'HOU',
+          home: false,
+          ip: '7.0',
+          h: 4,
+          r: 1,
+          er: 1,
+          bb: 1,
+          so: 9,
+          hr: 0,
+          decision: 'W',
+          pitches: 98,
+        },
+      ],
+    });
+    expect(parsed.batting[0]?.hr).toBe(1);
+    expect(parsed.pitching[0]?.decision).toBe('W');
+  });
+
+  it('parses an unmatched game-log response with empty lists', () => {
+    const parsed = playerGameLogResponseSchema.parse({
+      player: 'Nobody',
+      matched: false,
+      batting: [],
+      pitching: [],
+    });
+    expect(parsed.matched).toBe(false);
+    expect(parsed.batting).toEqual([]);
   });
 });

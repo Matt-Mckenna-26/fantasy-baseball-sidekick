@@ -235,6 +235,113 @@ thead .stickyPlayer {
   white-space: nowrap;
 }
 
+/* Live at-bat panel shown on a card while its game is in progress. */
+.liveSituation {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(74, 222, 128, 0.05);
+}
+
+/* Mini infield: three bases arranged as a diamond (2B top, 3B left, 1B right). */
+.diamond {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: none;
+}
+
+.base {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+}
+
+.baseSecond {
+  top: 0;
+  left: 50%;
+  margin-left: -6px;
+}
+
+.baseThird {
+  left: 0;
+  top: 50%;
+  margin-top: -6px;
+}
+
+.baseFirst {
+  right: 0;
+  top: 50%;
+  margin-top: -6px;
+}
+
+.baseOn {
+  background: #4ade80;
+  border-color: #4ade80;
+  cursor: help;
+}
+
+.situationInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+
+.countRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.outs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.outPip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+}
+
+.outPipOn {
+  background: #f87171;
+  border-color: #f87171;
+}
+
+.outsLabel {
+  margin-left: 2px;
+}
+
+.matchupLine {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matchupRole {
+  display: inline-block;
+  min-width: 1.4rem;
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .boxPanels {
     grid-template-columns: 1fr;

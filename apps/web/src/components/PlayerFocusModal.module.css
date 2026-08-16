@@ -184,6 +184,7 @@
 .playerHeader {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.9rem;
   flex: 0 0 auto;
 }
@@ -221,6 +222,37 @@
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+  flex: 1;
+}
+
+.askBtn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  background: rgba(109, 40, 217, 0.16);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.askBtn:hover {
+  border-color: rgba(196, 181, 253, 0.7);
+  background: rgba(109, 40, 217, 0.28);
+}
+
+.askIcon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  color: #c4b5fd;
 }
 
 .headerName {
@@ -289,6 +321,60 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.logSection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.logSubTitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.logWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.logTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.logTable th,
+.logTable td {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.logTable thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.logTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.logNum {
+  text-align: right;
 }
 
 .chartArea {

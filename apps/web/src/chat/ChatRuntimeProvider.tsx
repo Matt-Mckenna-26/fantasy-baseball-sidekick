@@ -8,7 +8,8 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CHAT_ASK_PARAM } from '../lib/chatAsk';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -278,6 +279,7 @@ function isAbortError(err: unknown): boolean {
 export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const league = session.status === 'connected' ? session.selectedLeague : null;
   const leagueId = league?.leagueId;
   const teamName = league?.teamName;
@@ -502,6 +504,39 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
     },
     [runTurn],
   );
+
+  // Deep-link / player-card launch: `/chat?ask=...` archives the open thread (if any) and
+  // sends the prompt as the first message of a new one. The param is stripped so a refresh
+  // doesn't fire the same ask again.
+  const startedAskRef = useRef<string | null>(null);
+  useEffect(() => {
+    const ask = searchParams.get(CHAT_ASK_PARAM)?.trim() ?? '';
+    if (!ask) {
+      startedAskRef.current = null;
+      return;
+    }
+    if (!leagueId || startedAskRef.current === ask) return;
+    startedAskRef.current = ask;
+
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete(CHAT_ASK_PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+
+    stop();
+    archiveCurrent();
+    const userEntry: ChatEntry = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: ask,
+      createdAt: new Date().toISOString(),
+    };
+    void runTurn([userEntry]);
+  }, [searchParams, leagueId, setSearchParams, stop, archiveCurrent, runTurn]);
 
   const controls = useMemo<ChatControls>(
     () => ({

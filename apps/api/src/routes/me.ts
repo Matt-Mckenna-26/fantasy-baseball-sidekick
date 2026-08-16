@@ -11,6 +11,26 @@ import { withSgptRank } from '../sgptRank.js';
 import { getScoredFreeAgents } from '../freeAgentValue.js';
 import { TtlCache, TTL } from '../ai/cache.js';
 
+/** Matches a YYYY-MM-DD calendar date. */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Today's calendar date in US Eastern time (the MLB game day). */
+function easternToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+}
+
+/**
+ * Parse an optional `?date=YYYY-MM-DD` query. Rejects malformed or future dates
+ * (future lineups aren't a supported filter). `undefined` means "no date / today".
+ */
+function parseOptionalDate(value: unknown): { ok: true; date?: string } | { ok: false } {
+  if (value === undefined) return { ok: true };
+  if (typeof value !== 'string' || !DATE_RE.test(value) || value > easternToday()) {
+    return { ok: false };
+  }
+  return { ok: true, date: value };
+}
+
 /** Authenticated, read-only endpoints scoped to the signed-in Yahoo user. */
 export function createMeRouter(
   config: AppConfig,
@@ -83,6 +103,7 @@ export function createMeRouter(
   );
 
   // Rosters for every team in a league (auth required; data source depends on mode).
+  // Optional ?date=YYYY-MM-DD returns each team's lineup snapshot for that game day.
   router.get(
     '/leagues/:leagueId/rosters',
     asyncHandler(async (req, res) => {
@@ -90,8 +111,16 @@ export function createMeRouter(
       if (!tokens) return;
       const leagueId = requireAllowedLeague(req, res);
       if (!leagueId) return;
-      const rosters = await provider.getLeagueRosters(tokens, leagueId, (refreshed) =>
-        tokenStore.save(req.sessionID, refreshed),
+      const parsedDate = parseOptionalDate(req.query.date);
+      if (!parsedDate.ok) {
+        sendError(res, 400, 'bad_request', 'date must be YYYY-MM-DD and not in the future.');
+        return;
+      }
+      const rosters = await provider.getLeagueRosters(
+        tokens,
+        leagueId,
+        (refreshed) => tokenStore.save(req.sessionID, refreshed),
+        parsedDate.date,
       );
       res.json(rosters);
     }),
@@ -340,12 +369,20 @@ export function createMeRouter(
         );
         return;
       }
+      const parsedDate = parseOptionalDate(req.query.date);
+      if (!parsedDate.ok) {
+        sendError(res, 400, 'bad_request', 'date must be YYYY-MM-DD and not in the future.');
+        return;
+      }
+      // A calendar date only applies to the single-day 'today' window.
+      const asOf = parsedRange.data === 'today' ? parsedDate.date : undefined;
       const stats = await provider.getTeamRangeStats(
         tokens,
         leagueId,
         teamId,
         parsedRange.data,
         (refreshed) => tokenStore.save(req.sessionID, refreshed),
+        asOf,
       );
       res.json(stats);
     }),

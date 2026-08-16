@@ -23,6 +23,7 @@ import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerMetaFooter } from '../components/PlayerMetaFooter';
 import { PlayerNameButton } from '../components/PlayerNameButton';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
@@ -459,6 +460,8 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
 
   const columnDefs = useMemo<ColDef<StatRow>[]>(() => {
     const pinMeta = !isNarrow;
+    // On phones the Pos + Team columns collapse into the Player cell's footer, so we
+    // drop them here to hand their width to the scoring columns (fewer scroll taps).
     const base: ColDef<StatRow>[] = [
       {
         headerName: 'Rank',
@@ -483,19 +486,23 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         comparator: rankComparator,
         filter: 'agNumberColumnFilter',
       },
-      {
-        headerName: 'Pos',
-        field: 'position',
-        width: 88,
-        ...(pinMeta ? { pinned: 'left' as const } : {}),
-        headerTooltip: 'Eligible / display position (filter e.g. SP, RP, 2B)',
-        filter: PickemFilter,
-        filterParams: { tokenize: true },
-      },
+      ...(isNarrow
+        ? []
+        : [
+            {
+              headerName: 'Pos',
+              field: 'position',
+              width: 88,
+              pinned: 'left' as const,
+              headerTooltip: 'Eligible / display position (filter e.g. SP, RP, 2B)',
+              filter: PickemFilter,
+              filterParams: { tokenize: true },
+            },
+          ]),
       {
         headerName: 'Player',
         field: 'fullName',
-        minWidth: isNarrow ? 140 : 200,
+        minWidth: isNarrow ? 150 : 200,
         flex: 2,
         pinned: 'left',
         cellRenderer: PlayerCell,
@@ -503,14 +510,18 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         filter: PickemFilter,
         filterParams: { searchable: true, searchPlaceholder: 'Search players\u2026' },
       },
-      {
-        headerName: 'Team',
-        field: 'owner',
-        minWidth: isNarrow ? 120 : 160,
-        flex: 1,
-        cellRenderer: OwnerCell,
-        filter: PickemFilter,
-      },
+      ...(isNarrow
+        ? []
+        : [
+            {
+              headerName: 'Team',
+              field: 'owner',
+              minWidth: 160,
+              flex: 1,
+              cellRenderer: OwnerCell,
+              filter: PickemFilter,
+            },
+          ]),
     ];
     const statCols: ColDef<StatRow>[] = columns.map((col) => ({
       headerName: col.label,
@@ -948,7 +959,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
               setGridReady(true);
             }}
             onModelUpdated={syncTopRows}
-            rowHeight={isNarrow ? 44 : undefined}
+            rowHeight={isNarrow ? 52 : undefined}
             animateRows
             suppressCellFocus
             tooltipShowDelay={300}
@@ -1226,27 +1237,36 @@ function OwnerCell(params: CustomCellRendererProps) {
   );
 }
 
-/** Player cell: headshot avatar + name with the MLB team abbr in muted parens. */
+/**
+ * Player cell: headshot avatar + name with the MLB team abbr in muted parens.
+ * On phones a metadata footer (Pos · fantasy Team) folds those columns under the
+ * name so the stat columns fit without horizontal scrolling.
+ */
 function PlayerCell(params: CustomCellRendererProps) {
   const data = params.data as StatRow;
   const fullName = String(data.fullName ?? '');
   const playerId = String(data.playerId ?? '');
   const abbr = data.mlbTeamAbbr as string | null;
   const headshotUrl = data.headshotUrl as string | null;
+  const position = data.position as string | null;
+  const owner = data.owner as string | null;
   return (
     <span className={styles.playerCellInner}>
       <PlayerAvatar fullName={fullName} {...(headshotUrl ? { headshotUrl } : {})} />
-      <span className={styles.playerName}>
-        <PlayerNameButton
-          stopPropagation
-          target={{
-            playerId,
-            fullName,
-            ...(abbr ? { mlbTeamAbbr: abbr } : {}),
-            ...(headshotUrl ? { headshotUrl } : {}),
-          }}
-        />
-        {abbr ? <span className="muted"> ({abbr})</span> : null}
+      <span className={styles.playerIdentity}>
+        <span className={styles.playerName}>
+          <PlayerNameButton
+            stopPropagation
+            target={{
+              playerId,
+              fullName,
+              ...(abbr ? { mlbTeamAbbr: abbr } : {}),
+              ...(headshotUrl ? { headshotUrl } : {}),
+            }}
+          />
+          {abbr ? <span className="muted"> ({abbr})</span> : null}
+        </span>
+        <PlayerMetaFooter items={[position, owner]} />
       </span>
     </span>
   );

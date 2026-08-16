@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
   LeagueRostersResponse,
   LeagueSummary,
@@ -6,6 +7,7 @@ import type {
   MlbBoxPitcher,
   MlbBoxScoreResponse,
   MlbBoxSide,
+  MlbGameSituation,
   MlbGameState,
   Player,
 } from '@fcm/contracts';
@@ -30,8 +32,12 @@ export function MlbScoresPage() {
   return <MlbScoresView rosters={state.data} league={state.league} />;
 }
 
-/** How often to refresh the games list and any expanded live box scores. */
-const POLL_MS = 30_000;
+/**
+ * Poll fast while a game is live so the diamond can follow a plate appearance (pitches are
+ * ~15-20s apart), and slowly otherwise. A matching 5s server cache coalesces viewers.
+ */
+const LIVE_POLL_MS = 5_000;
+const IDLE_POLL_MS = 30_000;
 
 /** Today's calendar date in US Eastern time (matches the API's MLB "game day"). */
 function easternToday(): string {
@@ -42,6 +48,13 @@ function shiftDate(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Use a deep-linked YYYY-MM-DD when valid; otherwise today's Eastern game day. */
+function dateFromSearch(value: string | null): string {
+  return value && DATE_RE.test(value) ? value : easternToday();
 }
 
 /** Ownership info for a single MLB player, resolved from the league's rosters. */
@@ -67,10 +80,27 @@ function MlbScoresView({
   const { session } = useSession();
   const myTeamName = session.status === 'connected' ? (session.selectedLeague?.teamName ?? null) : null;
 
-  const [date, setDate] = useState(easternToday());
+  const [searchParams] = useSearchParams();
+  const focusGamePk = Number(searchParams.get('game')) || null;
+  const dateParam = searchParams.get('date');
+
+  const [date, setDate] = useState(() => dateFromSearch(dateParam));
   const [games, setGames] = useState<MlbGameState[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [boxByGame, setBoxByGame] = useState<Record<number, BoxState>>({});
+
+  // Honor a `?date=` deep link (from Rosters paging a past day) without fighting the
+  // date picker: only apply when the query itself changes.
+  useEffect(() => {
+    if (dateParam && DATE_RE.test(dateParam)) setDate(dateParam);
+  }, [dateParam]);
+
+  // DOM nodes per game card so a `?game=` deep link can scroll its card into view.
+  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const setCardRef = useCallback((gamePk: number, node: HTMLDivElement | null) => {
+    if (node) cardRefs.current.set(gamePk, node);
+    else cardRefs.current.delete(gamePk);
+  }, []);
 
   // Keep the latest games/expanded in refs so the polling effect can read them without
   // re-subscribing (and restarting its timer) on every state change.
@@ -113,32 +143,53 @@ function MlbScoresView({
       );
   }, []);
 
-  // Load the selected date's games; poll while the tab is open so live scores stay fresh
-  // and any expanded live box scores update in place.
+  // Load the selected date's games and self-schedule the next poll: 5s while any game is
+  // live (so the diamond/count keeps up with an at-bat), 30s otherwise. Polling pauses
+  // while the tab is hidden and resumes immediately when it becomes visible again.
   useEffect(() => {
     let stale = false;
+    let timer: number | undefined;
+
+    const scheduleNext = (live: boolean) => {
+      if (stale) return;
+      timer = window.setTimeout(() => {
+        if (document.visibilityState === 'visible') loadGames();
+        else scheduleNext(live);
+      }, live ? LIVE_POLL_MS : IDLE_POLL_MS);
+    };
+
     const loadGames = () => {
       getMlbGames(date)
         .then((res) => {
-          if (!stale) setGames(res.games);
+          if (stale) return;
+          setGames(res.games);
+          const liveByPk = new Set(
+            res.games.filter((g) => g.state === 'live').map((g) => g.gamePk),
+          );
+          for (const gamePk of expandedRef.current) {
+            if (liveByPk.has(gamePk)) fetchBox(gamePk, true);
+          }
+          scheduleNext(liveByPk.size > 0);
         })
         .catch(() => {
-          if (!stale) setGames([]);
+          if (stale) return;
+          setGames([]);
+          scheduleNext(false);
         });
     };
-    loadGames();
-    const id = window.setInterval(() => {
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      window.clearTimeout(timer);
       loadGames();
-      const liveByPk = new Set(
-        gamesRef.current.filter((g) => g.state === 'live').map((g) => g.gamePk),
-      );
-      for (const gamePk of expandedRef.current) {
-        if (liveByPk.has(gamePk)) fetchBox(gamePk, true);
-      }
-    }, POLL_MS);
+    };
+
+    loadGames();
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       stale = true;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [date, fetchBox]);
 
@@ -169,6 +220,28 @@ function MlbScoresView({
       ownershipIndex.get(playerGameKey(teamAbbr, fullName)),
     [ownershipIndex],
   );
+
+  // A `?game=` deep link (from Matchups or Rosters) expands that game's card, loads its
+  // box score, and scrolls it into view once. Guarded so collapsing the card doesn't
+  // re-expand it.
+  const focusedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusGamePk || focusedRef.current === focusGamePk) return;
+    if (!games.some((g) => g.gamePk === focusGamePk)) return;
+    focusedRef.current = focusGamePk;
+    setExpanded((prev) => {
+      if (prev.has(focusGamePk)) return prev;
+      const next = new Set(prev);
+      next.add(focusGamePk);
+      return next;
+    });
+    if (!boxByGame[focusGamePk]) fetchBox(focusGamePk, false);
+    requestAnimationFrame(() => {
+      cardRefs.current
+        .get(focusGamePk)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, [focusGamePk, games, boxByGame, fetchBox]);
 
   return (
     <section>
@@ -222,6 +295,7 @@ function MlbScoresView({
               box={boxByGame[game.gamePk]}
               onToggle={() => toggleGame(game.gamePk)}
               ownerFor={ownerFor}
+              cardRef={(node) => setCardRef(game.gamePk, node)}
             />
           ))}
         </div>
@@ -246,19 +320,21 @@ function GameCard({
   box,
   onToggle,
   ownerFor,
+  cardRef,
 }: {
   game: MlbGameState;
   expanded: boolean;
   box: BoxState | undefined;
   onToggle: () => void;
   ownerFor: (teamAbbr: string, fullName: string) => OwnedInfo | undefined;
+  cardRef: (node: HTMLDivElement | null) => void;
 }) {
   const hasScore = game.homeScore !== undefined && game.awayScore !== undefined;
   const awayWon = hasScore && (game.awayScore ?? 0) > (game.homeScore ?? 0);
   const homeWon = hasScore && (game.homeScore ?? 0) > (game.awayScore ?? 0);
 
   return (
-    <div className={`${styles.gameCard} ${expanded ? styles.gameCardActive : ''}`}>
+    <div ref={cardRef} className={`${styles.gameCard} ${expanded ? styles.gameCardActive : ''}`}>
       <button
         type="button"
         className={styles.gameCardMain}
@@ -279,6 +355,10 @@ function GameCard({
         </span>
       </button>
 
+      {game.state === 'live' && game.situation && (
+        <LiveSituation situation={game.situation} />
+      )}
+
       {expanded && (
         <div className={styles.boxWrap}>
           {(!box || box.status === 'loading') && <p className="muted">Loading box score…</p>}
@@ -294,6 +374,82 @@ function GameCard({
         </div>
       )}
     </div>
+  );
+}
+
+/** Live at-bat panel: mini diamond, ball-strike count, outs, and current pitcher/batter. */
+function LiveSituation({ situation }: { situation: MlbGameSituation }) {
+  const outsLabel = `${situation.outs} ${situation.outs === 1 ? 'out' : 'outs'}`;
+  return (
+    <div className={styles.liveSituation}>
+      <BaseballDiamond situation={situation} />
+      <div className={styles.situationInfo}>
+        <div className={styles.countRow}>
+          <span className={styles.count} aria-label={`Count ${situation.balls} and ${situation.strikes}`}>
+            {situation.balls}-{situation.strikes}
+          </span>
+          <span className={styles.outs} aria-label={outsLabel}>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className={`${styles.outPip} ${i < situation.outs ? styles.outPipOn : ''}`}
+                aria-hidden="true"
+              />
+            ))}
+            <span className={styles.outsLabel}>{outsLabel}</span>
+          </span>
+        </div>
+        {situation.pitcher && (
+          <div className={styles.matchupLine}>
+            <span className={styles.matchupRole}>P</span> {situation.pitcher}
+          </div>
+        )}
+        {situation.batter && (
+          <div className={styles.matchupLine}>
+            <span className={styles.matchupRole}>AB</span> {situation.batter}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A tiny baseball diamond; occupied bases are filled and name their runner on hover. */
+function BaseballDiamond({ situation }: { situation: MlbGameSituation }) {
+  const label = [
+    situation.first ? `${situation.first} on first` : null,
+    situation.second ? `${situation.second} on second` : null,
+    situation.third ? `${situation.third} on third` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return (
+    <div className={styles.diamond} role="img" aria-label={label || 'bases empty'}>
+      <Base runner={situation.second} baseLabel="second" className={styles.baseSecond} />
+      <Base runner={situation.third} baseLabel="third" className={styles.baseThird} />
+      <Base runner={situation.first} baseLabel="first" className={styles.baseFirst} />
+    </div>
+  );
+}
+
+/** One base on the diamond: filled when occupied, with the runner's name as a hover title. */
+function Base({
+  runner,
+  baseLabel,
+  className,
+}: {
+  runner: string | undefined;
+  baseLabel: string;
+  className: string | undefined;
+}) {
+  const baseClass = `${styles.base} ${className}`;
+  if (!runner) return <span className={baseClass} />;
+  return (
+    <span
+      className={`${baseClass} ${styles.baseOn}`}
+      title={runner}
+      aria-label={`${runner} on ${baseLabel}`}
+    />
   );
 }
 
@@ -456,6 +612,7 @@ function PitchingGrid({
             <th className={table.num}>BB</th>
             <th className={table.num}>SO</th>
             <th className={table.num}>HR</th>
+            <th className={table.num} title="Pitches thrown">P</th>
             <th className={table.num}>ERA</th>
           </tr>
         </thead>
@@ -486,6 +643,7 @@ function PitcherRow({ pitcher, owner }: { pitcher: MlbBoxPitcher; owner: OwnedIn
       <td className={table.num}>{pitcher.bb}</td>
       <td className={table.num}>{pitcher.so}</td>
       <td className={table.num}>{pitcher.hr}</td>
+      <td className={table.num}>{pitcher.pitches}</td>
       <td className={table.num}>{pitcher.era ?? '-'}</td>
     </tr>
   );

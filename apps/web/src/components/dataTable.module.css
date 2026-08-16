@@ -255,9 +255,65 @@ thead .stickyColSecond {
   flex: 1 1 auto;
 }
 
+.rosterFilters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .rosterToolbar .rangeToggle {
   margin-bottom: 0;
-  margin-left: auto;
+}
+
+.dateBar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dateInput {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.dateNav,
+.todayButton {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dateNav {
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.todayButton {
+  padding: 0.35rem 0.7rem;
+}
+
+.dateNav:hover:not(:disabled),
+.todayButton:hover:not(:disabled) {
+  border-color: var(--accent-hover, #a78bfa);
+}
+
+.dateNav:disabled,
+.todayButton:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* Manager attribution under the roster header - a proper heading, not muted fine print. */
@@ -309,6 +365,40 @@ thead .stickyColSecond {
   gap: 0.35rem;
   min-width: 0;
   max-width: 100%;
+}
+
+/* Stacks the player name over its mobile metadata footer inside the identity cell.
+   On desktop the footer is hidden, so only the single name line shows. */
+.playerIdentity {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 0.05rem;
+  line-height: 1.2;
+}
+
+/* Collapsed metadata sub-line (pos · team · status). Hidden on desktop; the
+   phone breakpoint below turns it on so those columns can be dropped there. */
+.metaFooter {
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  line-height: 1.1;
+  color: var(--muted);
+}
+
+.metaSep {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .tableRoster .playerName {
@@ -428,9 +518,38 @@ thead .stickyColSecond {
     max-width: 10.5rem;
   }
 
+  /* When the Pos column is folded into the name footer on phones, Player becomes
+     the sole sticky identity column and pins to the left edge. */
+  .stickyPlayerLead {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--panel);
+    min-width: 9.5rem;
+    max-width: 13rem;
+  }
+
   thead .stickyPos,
-  thead .stickyPlayer {
+  thead .stickyPlayer,
+  thead .stickyPlayerLead {
     z-index: 3;
+  }
+
+  /* Turn the collapsed metadata sub-line on for phones (hidden on desktop). */
+  .metaFooter {
+    display: flex;
+  }
+
+  /* Compact the badges when they live in the footer rather than their own column. */
+  .metaFooter .posBadge {
+    min-width: 0;
+    padding: 0.05rem 0.3rem;
+    font-size: 0.66rem;
+  }
+
+  .metaFooter .statusBadge {
+    padding: 0.02rem 0.3rem;
+    font-size: 0.64rem;
   }
 
   .page__header {
@@ -453,8 +572,23 @@ thead .stickyColSecond {
     align-items: stretch;
   }
 
-  .rosterToolbar .rangeToggle {
+  .rosterToolbar .rangeToggle,
+  .rosterToolbar .rosterFilters {
     margin-left: 0;
+  }
+
+  .rosterToolbar .rosterFilters {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .rosterToolbar .dateBar {
+    width: 100%;
+  }
+
+  .rosterToolbar .dateInput {
+    flex: 1;
+    min-width: 0;
   }
 
   .tabToolbar .tabs {
@@ -692,6 +826,14 @@ thead .stickyColSecond {
 }
 
 /* Live game ticker cell: accent while a game is in progress, muted otherwise. */
+.tickerLink {
+  text-decoration: none;
+}
+
+.tickerLink:hover {
+  text-decoration: underline;
+}
+
 .tickerLive {
   color: var(--accent-hover, #a78bfa);
   font-weight: 600;

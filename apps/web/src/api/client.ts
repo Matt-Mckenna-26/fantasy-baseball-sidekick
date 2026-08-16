@@ -11,6 +11,7 @@ import {
   meLeaguesResponseSchema,
   mlbBoxScoreResponseSchema,
   mlbGamesResponseSchema,
+  playerGameLogResponseSchema,
   playerNewsResponseSchema,
   playerStatsResponseSchema,
   teamStatsResponseSchema,
@@ -28,6 +29,7 @@ import {
   type MeLeaguesResponse,
   type MlbBoxScoreResponse,
   type MlbGamesResponse,
+  type PlayerGameLogResponse,
   type PlayerNewsResponse,
   type PlayerStatsResponse,
   type StatRange,
@@ -192,8 +194,12 @@ export function getMyLeagues(): Promise<MeLeaguesResponse> {
   return getValidated('/api/me/leagues', (d) => meLeaguesResponseSchema.parse(d));
 }
 
-export function getLeagueRosters(leagueId: string): Promise<LeagueRostersResponse> {
-  return getValidated(`/api/me/leagues/${encodeURIComponent(leagueId)}/rosters`, (d) =>
+export function getLeagueRosters(
+  leagueId: string,
+  date?: string,
+): Promise<LeagueRostersResponse> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : '';
+  return getValidated(`/api/me/leagues/${encodeURIComponent(leagueId)}/rosters${query}`, (d) =>
     leagueRostersResponseSchema.parse(d),
   );
 }
@@ -312,10 +318,13 @@ export function getTeamRangeStats(
   leagueId: string,
   teamId: string,
   range: StatRange,
+  date?: string,
 ): Promise<TeamStatsResponse> {
+  const params = new URLSearchParams({ range });
+  if (date) params.set('date', date);
   const url =
     `/api/me/leagues/${encodeURIComponent(leagueId)}/teams/${encodeURIComponent(teamId)}/stats` +
-    `?range=${encodeURIComponent(range)}`;
+    `?${params.toString()}`;
   return getValidated(url, (d) => teamStatsResponseSchema.parse(d));
 }
 
@@ -370,6 +379,21 @@ export function getPlayerNews(name: string, teamAbbr?: string): Promise<PlayerNe
   return getValidated(
     `/api/mlb/players/news?${params.toString()}`,
     (d) => playerNewsResponseSchema.parse(d),
+    { silent: true },
+  );
+}
+
+/**
+ * Recent per-game batting/pitching lines for a player from the public MLB Stats API.
+ * Always silent: the player-focus card shows its own inline loading state. Fails soft
+ * server-side (unmatched + empty lists), so the card always renders.
+ */
+export function getPlayerGameLog(name: string, teamAbbr?: string): Promise<PlayerGameLogResponse> {
+  const params = new URLSearchParams({ name });
+  if (teamAbbr) params.set('team', teamAbbr);
+  return getValidated(
+    `/api/mlb/players/gamelog?${params.toString()}`,
+    (d) => playerGameLogResponseSchema.parse(d),
     { silent: true },
   );
 }

@@ -1,30 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
   LeagueMatchupsResponse,
   LeagueSummary,
   LeagueTeamStatsResponse,
   Matchup,
+  MlbGameState,
   Player,
   StatColumn,
   StatValue,
   TeamWeekStatsResponse,
 } from '@fcm/contracts';
-import { inferPlayerPositionType } from '@fcm/contracts';
+import { inferPlayerPositionType, normalizeTeamAbbr } from '@fcm/contracts';
 import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
 import { themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
-import { getLeagueMatchups, getLeagueTeamStats, getTeamWeekStats } from '../api/client';
+import { getLeagueMatchups, getLeagueTeamStats, getMlbGames, getTeamWeekStats } from '../api/client';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
 import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerMetaFooter } from '../components/PlayerMetaFooter';
 import { PlayerNameButton } from '../components/PlayerNameButton';
 import { MatchupCarousel } from '../components/MatchupCarousel';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
 import { buildStatPercentiles } from '../lib/percentile';
+import { formatMlbGameLine } from '../lib/mlbGameLine';
 import { toNumericValue } from '../lib/teamTrend';
 import styles from '../components/dataTable.module.css';
 import gridStyles from './StatsPage.module.css';
@@ -59,6 +62,14 @@ const gridTheme = themeQuartz.withParams({
   accentColor: '#7c3aed',
   fontFamily: 'inherit',
 });
+
+/** How often to refresh today's MLB games for the per-player game subtitle. */
+const MLB_POLL_MS = 30_000;
+
+/** Today's calendar date in US Eastern time (matches the API's MLB "game day"). */
+function easternToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+}
 
 export function MatchupsPage() {
   const state = useFirstLeagueResource(loadMatchupsData);
@@ -125,10 +136,40 @@ function MatchupsView({ data, league }: { data: MatchupsData; league: LeagueSumm
   }, [paramTeam, matchups]);
 
   const selectedMatchup = useMemo(
-    () =>
-      matchups.find((m) => m.teams.some((t) => t.teamId === selectedTeamId)) ?? matchups[0],
+    () => matchups.find((m) => m.teams.some((t) => t.teamId === selectedTeamId)) ?? matchups[0],
     [matchups, selectedTeamId],
   );
+
+  // Poll today's MLB games so each player row can show its live/scheduled game subtitle.
+  const [games, setGames] = useState<MlbGameState[]>([]);
+  useEffect(() => {
+    let stale = false;
+    const load = () => {
+      getMlbGames(easternToday())
+        .then((res) => {
+          if (!stale) setGames(res.games);
+        })
+        .catch(() => {
+          if (!stale) setGames([]);
+        });
+    };
+    load();
+    const id = window.setInterval(load, MLB_POLL_MS);
+    return () => {
+      stale = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // Normalized team abbr -> the game that team is playing in today.
+  const gameByAbbr = useMemo(() => {
+    const map = new Map<string, MlbGameState>();
+    for (const g of games) {
+      map.set(normalizeTeamAbbr(g.homeAbbr), g);
+      map.set(normalizeTeamAbbr(g.awayAbbr), g);
+    }
+    return map;
+  }, [games]);
 
   const [tab, setTab] = useState<Tab>('batting');
   const [weekStatsByTeam, setWeekStatsByTeam] = useState<Map<string, TeamWeekStatsResponse>>(
@@ -145,7 +186,9 @@ function MatchupsView({ data, league }: { data: MatchupsData; league: LeagueSumm
     let stale = false;
     setPlayersLoading(true);
     Promise.all(
-      missing.map((id) => getTeamWeekStats(league.leagueId, id, selectedMatchup.week, { silent: true })),
+      missing.map((id) =>
+        getTeamWeekStats(league.leagueId, id, selectedMatchup.week, { silent: true }),
+      ),
     )
       .then((results) => {
         if (stale) return;
@@ -202,6 +245,7 @@ function MatchupsView({ data, league }: { data: MatchupsData; league: LeagueSumm
             tab={tab}
             onTabChange={setTab}
             loading={playersLoading}
+            gameByAbbr={gameByAbbr}
           />
         </>
       )}
@@ -232,11 +276,7 @@ function MatchupScoreBanner({ matchup }: { matchup: Matchup }) {
 
   return (
     <div className={pageStyles.scoreBanner} aria-label="Matchup score">
-      {home ? (
-        <MatchupBannerSide team={home} align="start" leading={homeLeads} />
-      ) : (
-        <span />
-      )}
+      {home ? <MatchupBannerSide team={home} align="start" leading={homeLeads} /> : <span />}
       <div className={pageStyles.scoreBannerCenter}>
         <span
           className={cx([
@@ -256,11 +296,7 @@ function MatchupScoreBanner({ matchup }: { matchup: Matchup }) {
           {away?.categoriesWon ?? 0}
         </span>
       </div>
-      {away ? (
-        <MatchupBannerSide team={away} align="end" leading={awayLeads} />
-      ) : (
-        <span />
-      )}
+      {away ? <MatchupBannerSide team={away} align="end" leading={awayLeads} /> : <span />}
     </div>
   );
 }
@@ -404,12 +440,14 @@ function PlayerStatsGrid({
   tab,
   onTabChange,
   loading,
+  gameByAbbr,
 }: {
   matchup: Matchup;
   weekStatsByTeam: Map<string, TeamWeekStatsResponse>;
   tab: Tab;
   onTabChange: (tab: Tab) => void;
   loading: boolean;
+  gameByAbbr: Map<string, MlbGameState>;
 }) {
   const responses = matchup.teams
     .map((t) => weekStatsByTeam.get(t.teamId))
@@ -435,14 +473,20 @@ function PlayerStatsGrid({
         const pitcher = isPitcherPlayer(line.player);
         if ((tab === 'pitching') !== pitcher) continue;
         const byKey = new Map(line.stats.map((s) => [s.key, s.value]));
+        const abbr = line.player.mlbTeamAbbr ?? null;
+        const game = abbr ? gameByAbbr.get(normalizeTeamAbbr(abbr)) : undefined;
+        const gameLine = formatMlbGameLine(game);
         const row: PlayerRow = {
           rowId: `${resp.teamId}:${line.player.playerId}`,
           teamName: teamNameById.get(resp.teamId) ?? resp.teamId,
           playerId: line.player.playerId,
           fullName: line.player.fullName,
-          mlbTeamAbbr: line.player.mlbTeamAbbr ?? null,
+          mlbTeamAbbr: abbr,
           positionType: line.player.positionType ?? null,
           headshotUrl: line.player.headshotUrl ?? null,
+          gamePk: game?.gamePk ?? null,
+          gameText: gameLine?.text ?? null,
+          gameLive: gameLine?.live ? 1 : 0,
         };
         // Split numeric (sort/filter/percentile) from display ("-" placeholder kept).
         for (const col of columns) {
@@ -454,7 +498,7 @@ function PlayerStatsGrid({
       }
     }
     return out;
-  }, [responses, columns, tab, teamNameById]);
+  }, [responses, columns, tab, teamNameById, gameByAbbr]);
 
   // Percentiles rank each value against only the players in this matchup (both
   // teams' current tab), so the heat colors are scoped to the matchup, not the league.
@@ -477,30 +521,28 @@ function PlayerStatsGrid({
   const isNarrow = useIsNarrow();
 
   const columnDefs = useMemo<ColDef<PlayerRow>[]>(() => {
-    const base: ColDef<PlayerRow>[] = [
-      {
-        headerName: 'Team',
-        field: 'teamName',
-        minWidth: isNarrow ? 120 : 150,
-        flex: 1,
-        cellRenderer: TeamCell,
-        tooltipField: 'teamName',
-        filter: 'agTextColumnFilter',
-      },
-      {
-        headerName: 'Player',
-        field: 'fullName',
-        minWidth: isNarrow ? 140 : 180,
-        flex: 2,
-        ...(isNarrow ? { pinned: 'left' as const } : {}),
-        cellRenderer: PlayerCell,
-        tooltipField: 'fullName',
-        filter: 'agTextColumnFilter',
-      },
-    ];
-    // On narrow screens put Player first so the pinned identity column leads;
-    // Team stays scrollable with the stats.
-    const ordered = isNarrow ? [base[1]!, base[0]!] : base;
+    const teamCol: ColDef<PlayerRow> = {
+      headerName: 'Team',
+      field: 'teamName',
+      minWidth: 150,
+      flex: 1,
+      cellRenderer: TeamCell,
+      tooltipField: 'teamName',
+      filter: 'agTextColumnFilter',
+    };
+    const playerCol: ColDef<PlayerRow> = {
+      headerName: 'Player',
+      field: 'fullName',
+      minWidth: isNarrow ? 150 : 180,
+      flex: 2,
+      ...(isNarrow ? { pinned: 'left' as const } : {}),
+      cellRenderer: PlayerCell,
+      tooltipField: 'fullName',
+      filter: 'agTextColumnFilter',
+    };
+    // Phones fold the fantasy Team into the Player cell footer and drop the column,
+    // so the pinned identity leads and the scoring columns get that width.
+    const ordered = isNarrow ? [playerCol] : [teamCol, playerCol];
     const statCols: ColDef<PlayerRow>[] = columns.map((col) => ({
       headerName: col.label,
       field: col.key,
@@ -564,7 +606,7 @@ function PlayerStatsGrid({
           onGridReady={(e) => {
             apiRef.current = e.api;
           }}
-          rowHeight={isNarrow ? 44 : undefined}
+          rowHeight={isNarrow ? 64 : 56}
           animateRows
           suppressCellFocus
           tooltipShowDelay={300}
@@ -581,7 +623,10 @@ function TeamCell(params: CustomCellRendererProps) {
   return <span className={gridStyles.ownerName}>{String(data.teamName ?? '')}</span>;
 }
 
-/** Player cell: headshot avatar + full name. */
+/**
+ * Player cell: headshot avatar + full name. On phones a metadata footer folds the
+ * (dropped) fantasy Team column under the name so the stat columns get more room.
+ */
 function PlayerCell(params: CustomCellRendererProps) {
   const data = params.data as PlayerRow;
   const fullName = String(data.fullName ?? '');
@@ -589,20 +634,38 @@ function PlayerCell(params: CustomCellRendererProps) {
   const abbr = data.mlbTeamAbbr as string | null;
   const positionType = data.positionType as 'B' | 'P' | null;
   const headshotUrl = data.headshotUrl as string | null;
+  const teamName = data.teamName as string | null;
+  const gamePk = data.gamePk as number | null;
+  const gameText = data.gameText as string | null;
+  const gameLive = data.gameLive === 1;
   return (
     <span className={styles.playerCellInner}>
       <PlayerAvatar fullName={fullName} {...(headshotUrl ? { headshotUrl } : {})} />
-      <span className={styles.playerName}>
-        <PlayerNameButton
-          stopPropagation
-          target={{
-            playerId,
-            fullName,
-            ...(abbr ? { mlbTeamAbbr: abbr } : {}),
-            ...(positionType ? { positionType } : {}),
-            ...(headshotUrl ? { headshotUrl } : {}),
-          }}
-        />
+      <span className={styles.playerIdentity}>
+        <span className={styles.playerName}>
+          <PlayerNameButton
+            stopPropagation
+            target={{
+              playerId,
+              fullName,
+              ...(abbr ? { mlbTeamAbbr: abbr } : {}),
+              ...(positionType ? { positionType } : {}),
+              ...(headshotUrl ? { headshotUrl } : {}),
+            }}
+          />
+          {abbr ? <span className="muted"> ({abbr})</span> : null}
+        </span>
+        {gameText && gamePk != null ? (
+          <Link
+            to={`/scores?game=${gamePk}`}
+            className={`${pageStyles.gameSubtitle} ${gameLive ? pageStyles.gameSubtitleLive : ''}`}
+            onClick={(e) => e.stopPropagation()}
+            title="Open in MLB Scores"
+          >
+            {gameText}
+          </Link>
+        ) : null}
+        <PlayerMetaFooter items={[teamName]} />
       </span>
     </span>
   );

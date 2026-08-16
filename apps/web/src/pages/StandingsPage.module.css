@@ -372,3 +372,15 @@
     max-width: 10rem;
   }
 }
+
+/* Team name in the standings table doubles as a link to that team's roster. It
+   inherits the cell's text color; only the name underlines on hover/focus. */
+.teamLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.teamLink:hover .teamLinkName,
+.teamLink:focus-visible .teamLinkName {
+  text-decoration: underline;
+}

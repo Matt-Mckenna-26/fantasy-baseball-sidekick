@@ -1,18 +1,22 @@
 import { Router } from 'express';
 import type {
   MlbBoxScoreResponse,
+  MlbGamesResponse,
   PlayerAdvancedResponse,
+  PlayerGameLogResponse,
   PlayerNewsItem,
   PlayerNewsResponse,
 } from '@fcm/contracts';
 import {
   mlbBoxScoreResponseSchema,
   playerAdvancedResponseSchema,
+  playerGameLogResponseSchema,
   playerNewsResponseSchema,
 } from '@fcm/contracts';
 import { asyncHandler, sendError } from '../http.js';
 import { getBoxScore, getGamesForDate, getPlayerNews, type MlbTransaction } from '../mlbClient.js';
 import { getPlayerAdvancedStats } from '../mlbAdvanced.js';
+import { getPlayerGameLog } from '../mlbStats.js';
 import { getEspnPlayerNews } from '../espnClient.js';
 import { TtlCache } from '../ai/cache.js';
 
@@ -80,8 +84,21 @@ function normalizeKey(value: string): string {
 }
 
 /**
- * Short TTL for box scores: the Scores page polls live games ~every 30s, so a small
- * cache collapses concurrent viewers of the same game without staling the line for long.
+ * Very short TTL for the games list: the Scores page polls live games ~every 5s to follow
+ * an at-bat, so a tiny cache coalesces all viewers/tabs into one MLB schedule request per
+ * window without noticeably staling the count or score.
+ */
+const GAMES_TTL_MS = 5 * 1000;
+const gamesCache = new TtlCache();
+
+/** Fetch every MLB game for a date, cached briefly by date. */
+export async function fetchGames(date: string): Promise<MlbGamesResponse> {
+  return gamesCache.wrap(`games:${date}`, GAMES_TTL_MS, () => getGamesForDate(date));
+}
+
+/**
+ * Short TTL for box scores: the Scores page polls live games, so a small cache collapses
+ * concurrent viewers of the same game without staling the line for long.
  */
 const BOXSCORE_TTL_MS = 15 * 1000;
 const boxScoreCache = new TtlCache();
@@ -108,20 +125,43 @@ export async function fetchPlayerAdvanced(
   );
 }
 
+const GAME_LOG_TTL_MS = 5 * 60 * 1000;
+const gameLogCache = new TtlCache();
+
+/** Recent per-game lines for a player, cached briefly by name+team. Fails soft. */
+export async function fetchPlayerGameLog(
+  name: string,
+  opts: { teamAbbr?: string } = {},
+): Promise<PlayerGameLogResponse> {
+  const key = `gamelog:${normalizeKey(name)}:${opts.teamAbbr ?? ''}`;
+  return gameLogCache.wrap(key, GAME_LOG_TTL_MS, () =>
+    getPlayerGameLog(name, opts).catch(() => ({
+      player: name,
+      matched: false,
+      batting: [],
+      pitching: [],
+    })),
+  );
+}
+
 /**
  * Public MLB endpoints backing the roster "Today" ticker and the player-focus modal's news
- * feed. No Yahoo token or auth is needed - these proxy anonymous, public MLB/ESPN data and
- * send no user data upstream (see security rule). A mock games/news source can be injected
- * for mock mode so the UI renders without hitting the network.
+ * and game-log panels. No Yahoo token or auth is needed - these proxy anonymous, public
+ * MLB/ESPN data and send no user data upstream (see security rule). A mock games/news/log
+ * source can be injected for mock mode so the UI renders without hitting the network.
  */
 export function createMlbRouter(
-  getGames: (date: string) => Promise<unknown> = getGamesForDate,
+  getGames: (date: string) => Promise<unknown> = fetchGames,
   getNews: (name: string, opts: PlayerNewsOptions) => Promise<PlayerNewsResponse> = fetchPlayerNews,
   getAdvanced: (
     name: string,
     opts: { teamAbbr?: string },
   ) => Promise<PlayerAdvancedResponse> = fetchPlayerAdvanced,
   getBox: (gamePk: number) => Promise<MlbBoxScoreResponse> = fetchBoxScore,
+  getGameLog: (
+    name: string,
+    opts: { teamAbbr?: string },
+  ) => Promise<PlayerGameLogResponse> = fetchPlayerGameLog,
 ): Router {
   const router = Router();
 
@@ -167,6 +207,20 @@ export function createMlbRouter(
         ...(days ? { days } : {}),
       });
       res.json(playerNewsResponseSchema.parse(news));
+    }),
+  );
+
+  router.get(
+    '/players/gamelog',
+    asyncHandler(async (req, res) => {
+      const name = req.query.name;
+      if (typeof name !== 'string' || name.trim() === '') {
+        sendError(res, 400, 'bad_request', 'name is required.');
+        return;
+      }
+      const teamAbbr = typeof req.query.team === 'string' ? req.query.team : undefined;
+      const log = await getGameLog(name.trim(), { ...(teamAbbr ? { teamAbbr } : {}) });
+      res.json(playerGameLogResponseSchema.parse(log));
     }),
   );
 

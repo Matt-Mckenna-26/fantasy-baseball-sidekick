@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { StatColumn } from '@fcm/contracts';
 import {
   aggregateSplits,
+  mapBattingGameLog,
   mapColumns,
+  mapPitchingGameLog,
   resolvePersonId,
   windowBounds,
   type AggregatedStats,
@@ -187,5 +189,75 @@ describe('mapColumns', () => {
     // Unmatched player (null agg) -> every column blank.
     const blank = mapColumns(columns, null, new Set<string>());
     expect(blank.every((v) => v.value === '-')).toBe(true);
+  });
+});
+
+describe('mapBattingGameLog', () => {
+  it('drops dateless splits, newest first, and computes game AVG', () => {
+    const lines = mapBattingGameLog(
+      [
+        { date: '2026-07-01', isHome: false, opponent: { abbreviation: 'tor' }, stat: { atBats: 4, hits: 1, homeRuns: 0, runs: 0, rbi: 0, baseOnBalls: 0, strikeOuts: 1, stolenBases: 0, doubles: 0, triples: 0 } },
+        { stat: { atBats: 99, hits: 99 } },
+        { date: '2026-07-04', isHome: true, opponent: { abbreviation: 'BOS' }, game: { gamePk: 1 }, stat: { atBats: 4, hits: 2, homeRuns: 1, runs: 2, rbi: 3, baseOnBalls: 1, strikeOuts: 0, stolenBases: 1, doubles: 1, triples: 0 } },
+      ],
+      10,
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines[0]?.date).toBe('2026-07-04');
+    expect(lines[0]?.opponent).toBe('BOS');
+    expect(lines[0]?.home).toBe(true);
+    expect(lines[0]?.hr).toBe(1);
+    expect(lines[0]?.avg).toBe('.500');
+    expect(lines[1]?.opponent).toBe('TOR');
+    expect(lines[1]?.home).toBe(false);
+  });
+
+  it('respects the limit after sorting', () => {
+    const splits = [
+      { date: '2026-07-01', stat: { atBats: 1, hits: 0 } },
+      { date: '2026-07-03', stat: { atBats: 1, hits: 1 } },
+      { date: '2026-07-02', stat: { atBats: 1, hits: 0 } },
+    ];
+    const lines = mapBattingGameLog(splits, 2);
+    expect(lines.map((l) => l.date)).toEqual(['2026-07-03', '2026-07-02']);
+  });
+});
+
+describe('mapPitchingGameLog', () => {
+  it('maps IP from outs, picks a W decision, and keeps pitch count', () => {
+    const [line] = mapPitchingGameLog(
+      [
+        {
+          date: '2026-07-03',
+          isHome: false,
+          opponent: { abbreviation: 'HOU' },
+          stat: {
+            outs: 21,
+            hits: 4,
+            runs: 1,
+            earnedRuns: 1,
+            baseOnBalls: 1,
+            strikeOuts: 9,
+            homeRuns: 0,
+            wins: 1,
+            numberOfPitches: 98,
+          },
+        },
+      ],
+      10,
+    );
+    expect(line?.ip).toBe('7.0');
+    expect(line?.decision).toBe('W');
+    expect(line?.so).toBe(9);
+    expect(line?.pitches).toBe(98);
+    expect(line?.home).toBe(false);
+  });
+
+  it('prefers inningsPitched string over outs', () => {
+    const [line] = mapPitchingGameLog(
+      [{ date: '2026-07-01', stat: { inningsPitched: '6.1', outs: 99, earnedRuns: 2 } }],
+      5,
+    );
+    expect(line?.ip).toBe('6.1');
   });
 });

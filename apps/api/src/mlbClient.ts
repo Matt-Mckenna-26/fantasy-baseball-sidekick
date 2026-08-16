@@ -36,12 +36,31 @@ interface RawLineups {
   homePlayers?: RawPerson[];
   awayPlayers?: RawPerson[];
 }
+interface RawLinescoreRunner {
+  fullName?: string;
+}
+interface RawLinescore {
+  currentInning?: number;
+  inningState?: string;
+  balls?: number;
+  strikes?: number;
+  outs?: number;
+  offense?: {
+    first?: RawLinescoreRunner;
+    second?: RawLinescoreRunner;
+    third?: RawLinescoreRunner;
+    batter?: RawPerson;
+  };
+  defense?: {
+    pitcher?: RawPerson;
+  };
+}
 interface RawGame {
   gamePk?: number;
   gameDate?: string;
   status?: { abstractGameState?: string; detailedState?: string };
   teams?: { home?: RawTeamSide; away?: RawTeamSide };
-  linescore?: { currentInning?: number; inningState?: string };
+  linescore?: RawLinescore;
   lineups?: RawLineups;
 }
 interface RawSchedule {
@@ -91,6 +110,33 @@ function mapProbablePitchers(
     keys.push(playerGameKey(homeAbbr, home.probablePitcher.fullName));
   }
   return keys.length > 0 ? keys : undefined;
+}
+
+/** Clamp a possibly-undefined count/outs value into a small non-negative integer. */
+function clampInt(value: number | undefined, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.trunc(value), 0), max);
+}
+
+/** Map the live linescore's at-bat context (count, outs, runners, batter/pitcher). */
+function mapSituation(linescore: RawLinescore | undefined): MlbGameState['situation'] {
+  if (!linescore) return undefined;
+  const offense = linescore.offense;
+  const first = offense?.first?.fullName;
+  const second = offense?.second?.fullName;
+  const third = offense?.third?.fullName;
+  const batter = offense?.batter?.fullName;
+  const pitcher = linescore.defense?.pitcher?.fullName;
+  return {
+    balls: clampInt(linescore.balls, 4),
+    strikes: clampInt(linescore.strikes, 3),
+    outs: clampInt(linescore.outs, 3),
+    ...(typeof first === 'string' ? { first } : {}),
+    ...(typeof second === 'string' ? { second } : {}),
+    ...(typeof third === 'string' ? { third } : {}),
+    ...(typeof batter === 'string' ? { batter } : {}),
+    ...(typeof pitcher === 'string' ? { pitcher } : {}),
+  };
 }
 
 /** Map MLB's coarse `abstractGameState` to our lifecycle enum. */
@@ -145,6 +191,8 @@ export function mapScheduleToGames(raw: RawSchedule, date: string): MlbGamesResp
           );
           return probablePitchers ? { probablePitchers } : {};
         })(),
+        // At-bat context is only meaningful (and only present) while the game is live.
+        ...(state === 'live' ? { situation: mapSituation(g.linescore) } : {}),
       },
     ];
   });
@@ -222,6 +270,10 @@ function parseDecision(note: string | undefined): string | undefined {
 function mapBoxBatter(p: RawBoxPlayer): MlbBoxBatter | undefined {
   const fullName = p.person?.fullName;
   if (!fullName) return undefined;
+  // Universal DH: pitchers do not bat. MLB still lists them in `batters` with
+  // position "P" and an empty line — keep them off the hitters table. Two-way
+  // players who actually hit show as DH/TWP/PH, not P.
+  if (p.position?.abbreviation === 'P') return undefined;
   const batting = p.stats?.batting;
   const slot = toBattingOrderSlot(p.battingOrder);
   const avg = str(p.seasonStats?.batting, 'avg');
@@ -256,6 +308,7 @@ function mapBoxPitcher(p: RawBoxPlayer): MlbBoxPitcher | undefined {
     bb: num(pitching, 'baseOnBalls'),
     so: num(pitching, 'strikeOuts'),
     hr: num(pitching, 'homeRuns'),
+    pitches: num(pitching, 'numberOfPitches'),
     ...(era ? { era } : {}),
   };
 }

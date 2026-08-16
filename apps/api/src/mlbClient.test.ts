@@ -46,7 +46,21 @@ const sample = {
             away: { score: 2, team: { abbreviation: 'NYY' } },
             home: { score: 3, team: { abbreviation: 'TB' } },
           },
-          linescore: { currentInning: 5, inningState: 'Top' },
+          linescore: {
+            currentInning: 5,
+            inningState: 'Top',
+            balls: 2,
+            strikes: 1,
+            outs: 1,
+            offense: {
+              first: { fullName: 'Runner One' },
+              third: { fullName: 'Runner Three' },
+              batter: { id: 592450, fullName: 'Aaron Judge' },
+            },
+            defense: {
+              pitcher: { id: 605483, fullName: 'Shane McClanahan' },
+            },
+          },
         },
         {
           gamePk: 777400,
@@ -106,7 +120,19 @@ describe('mapScheduleToGames', () => {
       homeAbbr: 'TB',
       inning: 5,
       inningState: 'Top',
+      situation: {
+        balls: 2,
+        strikes: 1,
+        outs: 1,
+        first: 'Runner One',
+        third: 'Runner Three',
+        batter: 'Aaron Judge',
+        pitcher: 'Shane McClanahan',
+      },
     });
+    // Situation is only attached to live games.
+    expect(final?.situation).toBeUndefined();
+    expect(scheduled?.situation).toBeUndefined();
 
     expect(scheduled).toMatchObject({
       state: 'scheduled',

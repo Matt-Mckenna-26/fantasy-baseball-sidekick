@@ -506,6 +506,22 @@ export type LeagueMatchupsResponse = z.infer<typeof leagueMatchupsResponseSchema
 /* Yahoo. Used only to annotate rosters with "what's happening right now".     */
 /* -------------------------------------------------------------------------- */
 
+/** Live at-bat context: count, outs, base runners, and the current batter/pitcher. */
+export const mlbGameSituationSchema = z.object({
+  balls: z.number().int().min(0).max(4),
+  strikes: z.number().int().min(0).max(3),
+  outs: z.number().int().min(0).max(3),
+  /** Runner's full name on each base, present only when that base is occupied. */
+  first: z.string().optional(),
+  second: z.string().optional(),
+  third: z.string().optional(),
+  /** Current batter's full name, when the linescore reports it. */
+  batter: z.string().optional(),
+  /** Current pitcher's full name, when the linescore reports it. */
+  pitcher: z.string().optional(),
+});
+export type MlbGameSituation = z.infer<typeof mlbGameSituationSchema>;
+
 export const mlbGameStateSchema = z.object({
   /** MLB Stats API game id. */
   gamePk: z.number(),
@@ -531,6 +547,12 @@ export const mlbGameStateSchema = z.object({
   battingOrder: z.record(z.string(), z.number().int().min(1).max(9)).optional(),
   /** Probable starters keyed the same way as `battingOrder` (home + away). */
   probablePitchers: z.array(z.string()).optional(),
+  /**
+   * Live at-bat context from the schedule linescore: count, outs, occupied bases,
+   * and the current batter/pitcher. Present only while `state === 'live'` so the
+   * Scores page can render the diamond and follow a plate appearance pitch-by-pitch.
+   */
+  situation: mlbGameSituationSchema.optional(),
 });
 export type MlbGameState = z.infer<typeof mlbGameStateSchema>;
 
@@ -617,6 +639,8 @@ export const mlbBoxPitcherSchema = z.object({
   bb: z.number(),
   so: z.number(),
   hr: z.number(),
+  /** Total pitches thrown in this game (MLB `numberOfPitches`). */
+  pitches: z.number(),
   /** Season ERA as reported by MLB (e.g. "5.06"). */
   era: z.string().optional(),
 });
@@ -687,6 +711,71 @@ export const playerNewsResponseSchema = z.object({
   items: z.array(playerNewsItemSchema),
 });
 export type PlayerNewsResponse = z.infer<typeof playerNewsResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Player game log (public MLB Stats API per-game splits)                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Shared identity for one game in a player's log. Opponent abbreviation is
+ * normalized when present; `home` is the player's park, not the opponent's.
+ */
+const playerGameLogGameSchema = z.object({
+  /** Game date (YYYY-MM-DD), matching MLB's game day. */
+  date: z.string(),
+  /** Opponent team abbreviation, e.g. "BOS". */
+  opponent: z.string().optional(),
+  /** True when the player was the home team. */
+  home: z.boolean().optional(),
+  gamePk: z.number().int().positive().optional(),
+});
+
+/** One batting line from a player's recent game log. */
+export const playerGameLogBattingSchema = playerGameLogGameSchema.extend({
+  ab: z.number(),
+  r: z.number(),
+  h: z.number(),
+  doubles: z.number(),
+  triples: z.number(),
+  hr: z.number(),
+  rbi: z.number(),
+  bb: z.number(),
+  so: z.number(),
+  sb: z.number(),
+  /** Game batting average (H/AB), e.g. ".250". */
+  avg: z.string().optional(),
+});
+export type PlayerGameLogBatting = z.infer<typeof playerGameLogBattingSchema>;
+
+/** One pitching line from a player's recent game log. */
+export const playerGameLogPitchingSchema = playerGameLogGameSchema.extend({
+  /** Innings pitched as reported/derived (e.g. "6.1"). */
+  ip: z.string(),
+  h: z.number(),
+  r: z.number(),
+  er: z.number(),
+  bb: z.number(),
+  so: z.number(),
+  hr: z.number(),
+  /** Decision earned in this game: "W", "L", "SV", "HLD", or "BS". */
+  decision: z.string().optional(),
+  pitches: z.number().optional(),
+});
+export type PlayerGameLogPitching = z.infer<typeof playerGameLogPitchingSchema>;
+
+/**
+ * Response for GET /api/mlb/players/gamelog - recent per-game batting and/or
+ * pitching lines. `matched` is false when the player could not be resolved;
+ * both arrays are still present (possibly empty) so the modal always renders.
+ * Fails soft: upstream errors yield unmatched + empty lists, never a non-2xx.
+ */
+export const playerGameLogResponseSchema = z.object({
+  player: z.string(),
+  matched: z.boolean(),
+  batting: z.array(playerGameLogBattingSchema),
+  pitching: z.array(playerGameLogPitchingSchema),
+});
+export type PlayerGameLogResponse = z.infer<typeof playerGameLogResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
 /* Advanced / expected stats ("luck" analysis, public MLB Stats API)          */

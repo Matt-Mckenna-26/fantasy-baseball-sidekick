@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type {
   LeagueMatchupsResponse,
   LeagueStandingsResponse,
@@ -428,10 +428,13 @@ function StandingsTableRow({ row }: { row: StandingsRow }) {
         {row.rank != null ? <span className={tableStyles.posBadge}>{row.rank}</span> : '-'}
       </td>
       <td className={tableStyles.stickyColSecond} title={row.managerName ?? row.teamName}>
-        <span className={tableStyles.playerCellInner}>
+        <Link
+          className={`${tableStyles.playerCellInner} ${styles.teamLink}`}
+          to={`/rosters?team=${encodeURIComponent(row.teamId)}`}
+        >
           <EntityAvatar label={row.teamName} {...(row.logoUrl ? { imageUrl: row.logoUrl } : {})} />
-          <span className={tableStyles.playerName}>{row.teamName}</span>
-        </span>
+          <span className={`${tableStyles.playerName} ${styles.teamLinkName}`}>{row.teamName}</span>
+        </Link>
       </td>
       <td className={tableStyles.num}>{formatRecord(row)}</td>
       <td className={tableStyles.num}>{row.winPercentage ?? '-'}</td>

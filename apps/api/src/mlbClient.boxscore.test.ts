@@ -41,6 +41,7 @@ const raw = {
               baseOnBalls: 2,
               strikeOuts: 2,
               homeRuns: 0,
+              numberOfPitches: 78,
             },
           },
           seasonStats: { pitching: { era: '5.06' } },
@@ -106,6 +107,7 @@ describe('mapBoxScore', () => {
       ip: '5.0',
       er: 1,
       so: 2,
+      pitches: 78,
       era: '5.06',
     });
   });
@@ -137,5 +139,35 @@ describe('mapBoxScore', () => {
       2,
     );
     expect(box.home.batters[0]?.battingOrder).toBeUndefined();
+  });
+
+  it('omits pitchers from the hitters list even when MLB includes them in batters', () => {
+    const box = mapBoxScore(
+      {
+        teams: {
+          home: {
+            team: { name: 'Yankees', abbreviation: 'NYY' },
+            batters: [1, 2],
+            pitchers: [2],
+            players: {
+              ID1: {
+                person: { fullName: 'Aaron Judge' },
+                position: { abbreviation: 'DH' },
+                battingOrder: '300',
+                stats: { batting: { atBats: 4, runs: 1, hits: 2, rbi: 2, homeRuns: 1, baseOnBalls: 0, strikeOuts: 1 } },
+              },
+              ID2: {
+                person: { fullName: 'Ace Pitcher' },
+                position: { abbreviation: 'P' },
+                stats: { batting: { atBats: 0, runs: 0, hits: 0, rbi: 0, homeRuns: 0, baseOnBalls: 0, strikeOuts: 0 } },
+              },
+            },
+          },
+        },
+      },
+      3,
+    );
+    expect(box.home.batters.map((b) => b.fullName)).toEqual(['Aaron Judge']);
+    expect(box.home.pitchers.map((p) => p.fullName)).toEqual(['Ace Pitcher']);
   });
 });

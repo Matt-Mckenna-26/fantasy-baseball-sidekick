@@ -10,7 +10,7 @@ import { createAuthRouter } from './routes/auth.js';
 import { createMeRouter } from './routes/me.js';
 import { createMlbRouter } from './routes/mlb.js';
 import { createChatRouter } from './routes/chat.js';
-import { getMockBoxScore, getMockMlbGames, getMockPlayerNews } from './fantasyProvider.mock.js';
+import { getMockBoxScore, getMockMlbGames, getMockPlayerGameLog, getMockPlayerNews } from './fantasyProvider.mock.js';
 import { sendError } from './http.js';
 import { YahooUpstreamError } from './yahooClient.js';
 
@@ -81,6 +81,7 @@ export function createApp(config: AppConfig, deps: AppDeps): Express {
       config.dataMode === 'mock' ? getMockPlayerNews : undefined,
       undefined,
       config.dataMode === 'mock' ? getMockBoxScore : undefined,
+      config.dataMode === 'mock' ? getMockPlayerGameLog : undefined,
     ),
   );
 

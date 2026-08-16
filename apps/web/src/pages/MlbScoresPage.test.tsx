@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import type {
   LeagueRostersResponse,
   LeagueSummary,
@@ -8,6 +9,15 @@ import type {
   MlbGamesResponse,
 } from '@fcm/contracts';
 import { MlbScoresPage } from './MlbScoresPage';
+
+/** Render the page inside a router so useSearchParams/Link work; `route` sets the URL. */
+function renderPage(route = '/scores') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <MlbScoresPage />
+    </MemoryRouter>,
+  );
+}
 
 const league: LeagueSummary = {
   leagueId: '469.l.101214',
@@ -62,6 +72,15 @@ const games: MlbGamesResponse = {
       awayScore: 2,
       inning: 5,
       inningState: 'Top',
+      situation: {
+        balls: 2,
+        strikes: 1,
+        outs: 1,
+        first: 'Anthony Volpe',
+        third: 'Jazz Chisholm',
+        batter: 'Aaron Judge',
+        pitcher: 'Ace Pitcher',
+      },
     },
   ],
 };
@@ -79,7 +98,7 @@ const box: MlbBoxScoreResponse = {
       { fullName: 'Unowned Yankee', position: 'SS', battingOrder: 4, ab: 4, r: 0, h: 1, rbi: 0, hr: 0, bb: 0, so: 2, avg: '.240' },
     ],
     pitchers: [
-      { fullName: 'Ace Pitcher', decision: 'W', ip: '6.0', h: 5, r: 2, er: 2, bb: 1, so: 7, hr: 1, era: '3.10' },
+      { fullName: 'Ace Pitcher', decision: 'W', ip: '6.0', h: 5, r: 2, er: 2, bb: 1, so: 7, hr: 1, pitches: 95, era: '3.10' },
     ],
   },
   away: {
@@ -104,7 +123,7 @@ describe('MlbScoresPage', () => {
 
   it('lists games and expands a box score with owned players highlighted', async () => {
     const user = userEvent.setup();
-    render(<MlbScoresPage />);
+    renderPage();
 
     // Game card renders both sides.
     const card = await screen.findByRole('button', { name: /NYY/ });
@@ -113,23 +132,84 @@ describe('MlbScoresPage', () => {
 
     await user.click(card);
 
-    // Box score loads with the hitters and pitchers grids.
-    expect(await screen.findByText('Aaron Judge')).toBeInTheDocument();
-    expect(screen.getByText('Ace Pitcher')).toBeInTheDocument();
+    // Box score loads with the hitters and pitchers grids. "Unowned Yankee" appears only
+    // in the box (not the live situation panel), so it's a clean signal the box rendered.
+    expect(await screen.findByText('Unowned Yankee')).toBeInTheDocument();
     expect(getMlbBoxScore).toHaveBeenCalledWith(745804);
 
+    // The pitching grid includes the total pitches (P) column value. Names also appear in
+    // the live situation panel, so locate the actual table row.
+    const pitcherRow = screen
+      .getAllByText('Ace Pitcher')
+      .map((el) => el.closest('tr'))
+      .find((row): row is HTMLTableRowElement => row != null);
+    expect(pitcherRow).toBeTruthy();
+    expect(within(pitcherRow!).getByText('95')).toBeInTheDocument();
+
     // The rostered player shows the owning fantasy team; an unowned player does not.
-    const judgeRow = screen.getByText('Aaron Judge').closest('tr');
-    expect(judgeRow).not.toBeNull();
+    const judgeRow = screen
+      .getAllByText('Aaron Judge')
+      .map((el) => el.closest('tr'))
+      .find((row): row is HTMLTableRowElement => row != null);
+    expect(judgeRow).toBeTruthy();
     expect(within(judgeRow!).getByText('Bronx Bombers')).toBeInTheDocument();
 
     const unownedRow = screen.getByText('Unowned Yankee').closest('tr');
     expect(within(unownedRow!).queryByText('Bronx Bombers')).toBeNull();
   });
 
+  it('renders the live diamond with count, outs, and the current matchup', async () => {
+    renderPage();
+    // Ball-strike count.
+    expect(await screen.findByText('2-1')).toBeInTheDocument();
+    // Outs label.
+    expect(screen.getByText('1 out')).toBeInTheDocument();
+    // Current pitcher and batter names.
+    expect(screen.getByText('Ace Pitcher')).toBeInTheDocument();
+    expect(screen.getByText('Aaron Judge')).toBeInTheDocument();
+    // Occupied bases name their runner on hover (title) and for assistive tech.
+    expect(screen.getByTitle('Anthony Volpe')).toBeInTheDocument();
+    expect(screen.getByTitle('Jazz Chisholm')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: /Anthony Volpe on first, Jazz Chisholm on third/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('auto-expands the box score for a ?game= deep link', async () => {
+    renderPage('/scores?game=745804');
+    // The box score loads without a manual click.
+    expect(await screen.findByText('Unowned Yankee')).toBeInTheDocument();
+    expect(getMlbBoxScore).toHaveBeenCalledWith(745804);
+  });
+
+  it('loads the slate for a ?date= deep link', async () => {
+    renderPage('/scores?game=745804&date=2026-07-04');
+    await waitFor(() => {
+      expect(getMlbGames).toHaveBeenCalledWith('2026-07-04');
+    });
+  });
+
   it('shows an empty-state message when there are no games', async () => {
     vi.mocked(getMlbGames).mockResolvedValue({ date: '2026-07-04', games: [] });
-    render(<MlbScoresPage />);
+    renderPage();
     expect(await screen.findByText(/No MLB games scheduled/)).toBeInTheDocument();
+  });
+
+  it('polls again after 5s while a game is live', async () => {
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      // Flush the initial (non-timer) load.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getMlbGames).toHaveBeenCalledTimes(1);
+      // No refetch before the 5s live interval elapses.
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(getMlbGames).toHaveBeenCalledTimes(1);
+      // The live cadence triggers a second fetch at 5s.
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(getMlbGames).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

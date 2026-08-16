@@ -334,6 +334,16 @@ declare module 'yahoo-fantasy' {
 
   interface RosterResource {
     /**
+     * A team's roster for today, or for a week / date (`YYYY-MM-DD`). Date format
+     * selects a specific MLB game day; a week number selects that fantasy week.
+     * URL: `team/{key}/roster` or `team/{key}/roster;date=YYYY-MM-DD`.
+     */
+    fetch(
+      teamKey: string,
+      weekOrDate?: string,
+      cb?: (err: unknown, data: YahooTeam) => void,
+    ): Promise<YahooTeam>;
+    /**
      * A team's roster for a given week or date (`YYYY-MM-DD`) with a sub-resource -
      * pass `'stats'` to populate each roster player's `player_stats` for that week.
      * The week/date must be a string so the library's parser routes it correctly.

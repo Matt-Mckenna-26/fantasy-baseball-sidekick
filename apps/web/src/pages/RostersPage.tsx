@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
   LeagueRostersResponse,
   LeagueSummary,
@@ -7,6 +8,7 @@ import type {
   StatColumn,
   StatRange,
   StatValue,
+  TeamRoster,
   TeamStatsResponse,
 } from '@fcm/contracts';
 import { isPitcherRosterSlot, normalizeTeamAbbr, playerGameKey } from '@fcm/contracts';
@@ -17,8 +19,10 @@ import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
 import { EntityAvatar, EntityLabel } from '../components/EntityAvatar';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import { PlayerMetaFooter } from '../components/PlayerMetaFooter';
 import { PlayerNameButton } from '../components/PlayerNameButton';
 import { computeRosterTotals } from '../lib/rosterTotals';
+import { formatMlbGameLine } from '../lib/mlbGameLine';
 import styles from '../components/dataTable.module.css';
 
 export function RostersPage() {
@@ -50,6 +54,12 @@ function easternToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
 }
 
+function shiftDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function rosterRowClass(selectedPosition: string): string | undefined {
   if (selectedPosition === 'BN') return styles.benchRow;
   if (selectedPosition === 'IL' || selectedPosition.startsWith('IL')) return styles.injuredRow;
@@ -64,23 +74,73 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
     () => RANGES.filter((r) => r.value !== 'last14' || supportsLast14),
     [supportsLast14],
   );
-  const [selectedTeamId, setSelectedTeamId] = useState(data.teams[0]?.teamId ?? '');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramTeam = searchParams.get('team');
+  const teamExists = (id: string | null): id is string =>
+    id != null && data.teams.some((t) => t.teamId === id);
+
+  const [selectedTeamId, setSelectedTeamId] = useState(() =>
+    teamExists(paramTeam) ? paramTeam : (data.teams[0]?.teamId ?? ''),
+  );
   const [range, setRange] = useState<StatRange>('today');
+  const [date, setDate] = useState(easternToday);
+  const today = easternToday();
+  const isToday = date === today;
+  const [datedTeams, setDatedTeams] = useState<TeamRoster[] | null>(null);
+
+  // Sync the dropdown when a deep-link `?team=` arrives (e.g. from Live Standings).
+  useEffect(() => {
+    if (teamExists(paramTeam)) setSelectedTeamId(paramTeam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramTeam]);
+
+  const selectTeam = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setSearchParams({ team: teamId }, { replace: true });
+  };
+  const selectRange = (next: StatRange) => {
+    setRange(next);
+    if (next !== 'today') setDate(easternToday());
+  };
+
   const [stats, setStats] = useState<TeamStatsResponse | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [games, setGames] = useState<MlbGameState[]>([]);
 
-  const team = data.teams.find((t) => t.teamId === selectedTeamId) ?? data.teams[0];
+  const teams = datedTeams ?? data.teams;
+  const team = teams.find((t) => t.teamId === selectedTeamId) ?? teams[0];
   const teamId = team?.teamId ?? '';
 
-  // Fetch the selected team's scoring stats for the chosen window. Re-runs on team or
-  // range change; a stale flag prevents an earlier response from overwriting a newer one.
+  // Historical lineup for the selected game day. Today's snapshot already loaded
+  // with the page; paging backwards refetches every team's roster for that date.
+  useEffect(() => {
+    if (range !== 'today' || isToday) {
+      setDatedTeams(null);
+      return;
+    }
+    let stale = false;
+    getLeagueRosters(league.leagueId, date)
+      .then((res) => {
+        if (!stale) setDatedTeams(res.teams);
+      })
+      .catch(() => {
+        if (!stale) setDatedTeams(null);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [league.leagueId, range, date, isToday]);
+
+  // Fetch the selected team's scoring stats for the chosen window. Re-runs on team,
+  // range, or (Today) date change; a stale flag prevents an earlier response from
+  // overwriting a newer one.
   useEffect(() => {
     if (!teamId) return;
     let stale = false;
     setStatsLoading(true);
     setStats(null);
-    getTeamRangeStats(league.leagueId, teamId, range)
+    const asOf = range === 'today' && !isToday ? date : undefined;
+    getTeamRangeStats(league.leagueId, teamId, range, asOf)
       .then((res) => {
         if (!stale) setStats(res);
       })
@@ -93,13 +153,14 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
     return () => {
       stale = true;
     };
-  }, [league.leagueId, teamId, range]);
+  }, [league.leagueId, teamId, range, date, isToday]);
 
-  // Poll today's MLB games for lineup badges and the Today-view ticker.
+  // Poll MLB games for lineup badges and the Today-view ticker. Historical days
+  // are a single fetch; live today keeps the 30s poll.
   useEffect(() => {
     let stale = false;
     const load = () => {
-      getMlbGames(easternToday())
+      getMlbGames(date)
         .then((res) => {
           if (!stale) setGames(res.games);
         })
@@ -108,12 +169,13 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
         });
     };
     load();
-    const id = window.setInterval(load, TICKER_POLL_MS);
+    const shouldPoll = range === 'today' && isToday;
+    const id = shouldPoll ? window.setInterval(load, TICKER_POLL_MS) : undefined;
     return () => {
       stale = true;
-      window.clearInterval(id);
+      if (id !== undefined) window.clearInterval(id);
     };
-  }, []);
+  }, [date, range, isToday]);
 
   const batterColumns = stats?.battingColumns ?? [];
   const pitcherColumns = stats?.pitchingColumns ?? [];
@@ -178,9 +240,9 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
             <select
               className={styles.select}
               value={team.teamId}
-              onChange={(event) => setSelectedTeamId(event.target.value)}
+              onChange={(event) => selectTeam(event.target.value)}
             >
-              {data.teams.map((t) => (
+              {teams.map((t) => (
                 <option key={t.teamId} value={t.teamId}>
                   {t.teamName}
                 </option>
@@ -204,18 +266,59 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
           </div>
         )}
 
-        <div className={styles.rangeToggle} role="group" aria-label="Stat range">
-          {visibleRanges.map((r) => (
-            <button
-              key={r.value}
-              type="button"
-              className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-              aria-pressed={r.value === range}
-              onClick={() => setRange(r.value)}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className={styles.rosterFilters}>
+          {showTicker && (
+            <div className={styles.dateBar} role="group" aria-label="Roster date">
+              <button
+                type="button"
+                className={styles.dateNav}
+                onClick={() => setDate((d) => shiftDate(d, -1))}
+                aria-label="Previous day"
+              >
+                ‹
+              </button>
+              <input
+                type="date"
+                className={styles.dateInput}
+                value={date}
+                max={today}
+                onChange={(e) => e.target.value && setDate(e.target.value > today ? today : e.target.value)}
+              />
+              <button
+                type="button"
+                className={styles.dateNav}
+                onClick={() => setDate((d) => {
+                  const next = shiftDate(d, 1);
+                  return next > today ? today : next;
+                })}
+                disabled={isToday}
+                aria-label="Next day"
+              >
+                ›
+              </button>
+              <button
+                type="button"
+                className={styles.todayButton}
+                onClick={() => setDate(today)}
+                disabled={isToday}
+              >
+                Today
+              </button>
+            </div>
+          )}
+          <div className={styles.rangeToggle} role="group" aria-label="Stat range">
+            {visibleRanges.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+                aria-pressed={r.value === range}
+                onClick={() => selectRange(r.value)}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -228,6 +331,7 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
           statsLoading={statsLoading}
           showTicker={showTicker}
           gameByAbbr={gameByAbbr}
+          date={date}
         />
         <RosterTable
           title="Pitchers"
@@ -237,6 +341,7 @@ function RostersView({ data, league }: { data: LeagueRostersResponse; league: Le
           statsLoading={statsLoading}
           showTicker={showTicker}
           gameByAbbr={gameByAbbr}
+          date={date}
           isPitcherTable
         />
       </div>
@@ -252,6 +357,7 @@ type RosterTableProps = {
   statsLoading: boolean;
   showTicker: boolean;
   gameByAbbr: Map<string, MlbGameState>;
+  date: string;
   isPitcherTable?: boolean;
 };
 
@@ -263,11 +369,15 @@ function RosterTable({
   statsLoading,
   showTicker,
   gameByAbbr,
+  date,
   isPitcherTable = false,
 }: RosterTableProps) {
   const isNarrow = useIsNarrow();
   // Hide the live Game ticker on phones so scoring cols stay readable via H-scroll.
   const tickerVisible = showTicker && !isNarrow;
+  // Phones fold Pos / MLB / Status into the Player cell footer and drop those
+  // columns, handing their width to the scoring columns so more stats fit on screen.
+  const metaCols = !isNarrow;
   const statShare = Math.max(columns.length, 1) * 6;
   const playerShare = 22;
   const gameShare = tickerVisible ? 24 : 0;
@@ -285,27 +395,27 @@ function RosterTable({
       <div className={styles.tableRosterWrap}>
         <table className={`${styles.table} ${styles.tableRoster}`}>
           <colgroup>
-            <col style={{ width: `${(6 / totalShare) * 100}%` }} />
+            {metaCols && <col style={{ width: `${(6 / totalShare) * 100}%` }} />}
             <col style={{ width: `${(playerShare / totalShare) * 100}%` }} />
-            <col style={{ width: `${(7 / totalShare) * 100}%` }} />
+            {metaCols && <col style={{ width: `${(7 / totalShare) * 100}%` }} />}
             {tickerVisible && <col style={{ width: `${(gameShare / totalShare) * 100}%` }} />}
             {columns.map((col) => (
               <col key={col.key} style={{ width: `${(6 / totalShare) * 100}%` }} />
             ))}
-            <col style={{ width: `${(10 / totalShare) * 100}%` }} />
+            {metaCols && <col style={{ width: `${(10 / totalShare) * 100}%` }} />}
           </colgroup>
           <thead>
             <tr>
-              <th className={styles.stickyPos}>Pos</th>
-              <th className={styles.stickyPlayer}>Player</th>
-              <th>MLB</th>
+              {metaCols && <th className={styles.stickyPos}>Pos</th>}
+              <th className={metaCols ? styles.stickyPlayer : styles.stickyPlayerLead}>Player</th>
+              {metaCols && <th>MLB</th>}
               {tickerVisible && <th>Game</th>}
               {columns.map((col) => (
                 <th key={col.key} className={styles.num} title={col.description}>
                   {col.label}
                 </th>
               ))}
-              <th>Status</th>
+              {metaCols && <th>Status</th>}
             </tr>
           </thead>
           <tbody>
@@ -316,11 +426,13 @@ function RosterTable({
               const rowClass = rosterRowClass(slot.selectedPosition);
               return (
                 <tr key={slot.player.playerId} className={rowClass}>
-                  <td className={styles.stickyPos}>
-                    <span className={styles.posBadge}>{slot.selectedPosition}</span>
-                  </td>
+                  {metaCols && (
+                    <td className={styles.stickyPos}>
+                      <span className={styles.posBadge}>{slot.selectedPosition}</span>
+                    </td>
+                  )}
                   <td
-                    className={`${styles.playerCell} ${styles.stickyPlayer}`}
+                    className={`${styles.playerCell} ${metaCols ? styles.stickyPlayer : styles.stickyPlayerLead}`}
                     title={slot.player.fullName}
                   >
                     <span className={styles.playerCellInner}>
@@ -328,26 +440,39 @@ function RosterTable({
                         fullName={slot.player.fullName}
                         headshotUrl={slot.player.headshotUrl}
                       />
-                      <span className={styles.playerName}>
-                        <PlayerNameButton
-                          target={{
-                            playerId: slot.player.playerId,
-                            fullName: slot.player.fullName,
-                            ...(slot.player.mlbTeamAbbr
-                              ? { mlbTeamAbbr: slot.player.mlbTeamAbbr }
-                              : {}),
-                            ...(slot.player.positionType
-                              ? { positionType: slot.player.positionType }
-                              : {}),
-                            ...(slot.player.headshotUrl
-                              ? { headshotUrl: slot.player.headshotUrl }
-                              : {}),
-                          }}
-                        />
+                      <span className={styles.playerIdentity}>
+                        <span className={styles.playerName}>
+                          <PlayerNameButton
+                            target={{
+                              playerId: slot.player.playerId,
+                              fullName: slot.player.fullName,
+                              ...(slot.player.mlbTeamAbbr
+                                ? { mlbTeamAbbr: slot.player.mlbTeamAbbr }
+                                : {}),
+                              ...(slot.player.positionType
+                                ? { positionType: slot.player.positionType }
+                                : {}),
+                              ...(slot.player.headshotUrl
+                                ? { headshotUrl: slot.player.headshotUrl }
+                                : {}),
+                            }}
+                          />
+                        </span>
+                        {!metaCols && (
+                          <PlayerMetaFooter
+                            items={[
+                              <span className={styles.posBadge}>{slot.selectedPosition}</span>,
+                              abbr,
+                              slot.player.status ? (
+                                <span className={styles.statusBadge}>{slot.player.status}</span>
+                              ) : null,
+                            ]}
+                          />
+                        )}
                       </span>
                     </span>
                   </td>
-                  <td className="muted">{abbr ?? '-'}</td>
+                  {metaCols && <td className="muted">{abbr ?? '-'}</td>}
                   {tickerVisible && (
                     <td className={styles.gameCell}>
                       <span className={styles.gameCellInner}>
@@ -358,7 +483,7 @@ function RosterTable({
                           isPitcher={isPitcherTable}
                         />
                         <span className={styles.gameTickerText}>
-                          <Ticker game={game} teamAbbr={abbr} />
+                          <Ticker game={game} teamAbbr={abbr} date={date} />
                         </span>
                       </span>
                     </td>
@@ -371,13 +496,15 @@ function RosterTable({
                       </td>
                     );
                   })}
-                  <td>
-                    {slot.player.status ? (
-                      <span className={styles.statusBadge}>{slot.player.status}</span>
-                    ) : (
-                      <span className="muted">-</span>
-                    )}
-                  </td>
+                  {metaCols && (
+                    <td>
+                      {slot.player.status ? (
+                        <span className={styles.statusBadge}>{slot.player.status}</span>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -385,24 +512,25 @@ function RosterTable({
           {slots.length > 0 && (
             <tfoot>
               <tr className={styles.totalsRow}>
-                <td colSpan={2} className={`${styles.totalsLabel} ${styles.stickyPos}`}>
+                <td
+                  colSpan={metaCols ? 2 : 1}
+                  className={`${styles.totalsLabel} ${metaCols ? styles.stickyPos : styles.stickyPlayerLead}`}
+                >
                   Total
                 </td>
-                <td />
+                {metaCols && <td />}
                 {tickerVisible && <td />}
                 {columns.map((col) => (
                   <td key={col.key} className={styles.num}>
                     {statsLoading ? '…' : totals.get(col.key)}
                   </td>
                 ))}
-                <td />
+                {metaCols && <td />}
               </tr>
             </tfoot>
           )}
         </table>
-        {slots.length === 0 && (
-          <p className="muted">No {title.toLowerCase()} on this roster.</p>
-        )}
+        {slots.length === 0 && <p className="muted">No {title.toLowerCase()} on this roster.</p>}
       </div>
     </div>
   );
@@ -427,7 +555,11 @@ function GameDayBadge({
 
     if (isPitcher && game.probablePitchers?.includes(key)) {
       badge = (
-        <span className={styles.gameDayBadge} title="Starting pitcher" aria-label="Starting pitcher">
+        <span
+          className={styles.gameDayBadge}
+          title="Starting pitcher"
+          aria-label="Starting pitcher"
+        >
           ✓
         </span>
       );
@@ -452,33 +584,28 @@ function GameDayBadge({
 }
 
 /** One player's live game cell: score + inning when live, else start time / Final. */
-function Ticker({ game, teamAbbr }: { game?: MlbGameState; teamAbbr?: string }) {
-  if (!game || !teamAbbr) {
+function Ticker({
+  game,
+  teamAbbr,
+  date,
+}: {
+  game?: MlbGameState;
+  teamAbbr?: string;
+  date: string;
+}) {
+  const line = teamAbbr ? formatMlbGameLine(game) : null;
+  if (!line || !game) {
     return <span className="muted">-</span>;
   }
-  const score =
-    game.homeScore !== undefined && game.awayScore !== undefined
-      ? `${game.awayAbbr} ${game.awayScore}-${game.homeScore} ${game.homeAbbr}`
-      : `${game.awayAbbr} @ ${game.homeAbbr}`;
-
-  if (game.state === 'live') {
-    const half = [game.inningState, game.inning].filter(Boolean).join(' ');
-    return (
-      <span className={styles.tickerLive}>
-        {half ? `${half} · ` : ''}
-        {score}
-      </span>
-    );
-  }
-  if (game.state === 'final') {
-    return <span className={styles.tickerMuted}>Final · {score}</span>;
-  }
-  const time = game.startTime
-    ? new Date(game.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : 'Scheduled';
+  const params = new URLSearchParams({ game: String(game.gamePk) });
+  if (date !== easternToday()) params.set('date', date);
   return (
-    <span className={styles.tickerMuted}>
-      {time} · {score}
-    </span>
+    <Link
+      to={`/scores?${params.toString()}`}
+      className={`${styles.tickerLink} ${line.live ? styles.tickerLive : styles.tickerMuted}`}
+      title="Open in MLB Scores"
+    >
+      {line.text}
+    </Link>
   );
 }

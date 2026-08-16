@@ -24,6 +24,7 @@ import {
   type MlbBoxScoreResponse,
   type MlbBoxSide,
   type MlbGamesResponse,
+  type PlayerGameLogResponse,
   type PlayerNewsResponse,
   type PlayerStatsResponse,
   type StatRange,
@@ -466,6 +467,15 @@ const MOCK_MLB_GAMES: MlbGamesResponse['games'] = [
       [playerGameKey('NYY', 'Ben Rice')]: 9,
     },
     probablePitchers: [playerGameKey('NYY', 'Mock Starter')],
+    situation: {
+      balls: 2,
+      strikes: 1,
+      outs: 1,
+      first: 'Austin Wells',
+      third: 'Ben Rice',
+      batter: 'Aaron Judge',
+      pitcher: 'Mock Starter',
+    },
   },
   {
     gamePk: 2,
@@ -482,6 +492,14 @@ const MOCK_MLB_GAMES: MlbGamesResponse['games'] = [
       [playerGameKey('ATL', 'Matt Olson')]: 4,
     },
     probablePitchers: [playerGameKey('PHI', 'Cristopher Sanchez')],
+    situation: {
+      balls: 0,
+      strikes: 2,
+      outs: 2,
+      second: 'Trea Turner',
+      batter: 'Kyle Schwarber',
+      pitcher: 'Cristopher Sanchez',
+    },
   },
   {
     gamePk: 3,
@@ -639,6 +657,7 @@ function mockPitcher(fullName: string, decision?: string): MlbBoxPitcher {
     bb: 1,
     so: decision === 'W' ? 6 : 2,
     hr: decision === 'W' ? 1 : 0,
+    pitches: decision === 'W' ? 92 : 14,
     era: '3.42',
   };
 }
@@ -708,6 +727,102 @@ export function getMockPlayerNews(name: string): Promise<PlayerNewsResponse> {
         published: '2026-07-04T18:30:00Z',
       },
     ],
+  });
+}
+
+/**
+ * Mock game-log source injected into the /api/mlb router in mock mode, so the
+ * player-focus card can render recent lines offline.
+ */
+export function getMockPlayerGameLog(name: string): Promise<PlayerGameLogResponse> {
+  const pitcher = /\b(skubal|cole|crochet|wheeler|sale|pitcher)\b/i.test(name);
+  return Promise.resolve({
+    player: name,
+    matched: true,
+    batting: pitcher
+      ? []
+      : [
+          {
+            date: '2026-07-04',
+            opponent: 'BOS',
+            home: true,
+            ab: 4,
+            r: 2,
+            h: 3,
+            doubles: 1,
+            triples: 0,
+            hr: 1,
+            rbi: 3,
+            bb: 1,
+            so: 0,
+            sb: 1,
+            avg: '.750',
+          },
+          {
+            date: '2026-07-03',
+            opponent: 'BOS',
+            home: true,
+            ab: 5,
+            r: 1,
+            h: 1,
+            doubles: 0,
+            triples: 0,
+            hr: 1,
+            rbi: 2,
+            bb: 0,
+            so: 2,
+            sb: 0,
+            avg: '.200',
+          },
+          {
+            date: '2026-07-01',
+            opponent: 'TOR',
+            home: false,
+            ab: 4,
+            r: 0,
+            h: 0,
+            doubles: 0,
+            triples: 0,
+            hr: 0,
+            rbi: 0,
+            bb: 1,
+            so: 1,
+            sb: 0,
+            avg: '.000',
+          },
+        ],
+    pitching: pitcher
+      ? [
+          {
+            date: '2026-07-03',
+            opponent: 'HOU',
+            home: false,
+            ip: '7.0',
+            h: 4,
+            r: 1,
+            er: 1,
+            bb: 1,
+            so: 9,
+            hr: 0,
+            decision: 'W',
+            pitches: 98,
+          },
+          {
+            date: '2026-06-28',
+            opponent: 'SEA',
+            home: true,
+            ip: '6.1',
+            h: 6,
+            r: 3,
+            er: 3,
+            bb: 2,
+            so: 7,
+            hr: 1,
+            decision: 'L',
+            pitches: 104,
+          },
+        ]
+      : [],
   });
 }
 

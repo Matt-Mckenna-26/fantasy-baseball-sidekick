@@ -167,6 +167,27 @@
   margin-top: 0.5rem;
 }
 
+/* Per-player subtitle under the name: today's MLB game, links to MLB Scores. */
+.gameSubtitle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.gameSubtitle:hover {
+  text-decoration: underline;
+}
+
+.gameSubtitleLive {
+  color: var(--accent-hover, #a78bfa);
+  font-weight: 600;
+}
+
 /* Help icon + tabs grouped on the left so the guide panel opens into the viewport. */
 .playersTabToolbar {
   justify-content: flex-start;

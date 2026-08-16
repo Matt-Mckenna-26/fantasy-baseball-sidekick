@@ -3,9 +3,18 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ChatResponse } from '@fcm/contracts';
 import { ChatPage } from './ChatPage';
+import { playerResearchPrompt } from '../lib/chatAsk';
+
+const chatSearch = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+  setParams: vi.fn(),
+}));
 
 vi.mock('../api/client', () => ({ sendChatMessage: vi.fn(), YAHOO_LOGIN_URL: '/auth/yahoo' }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+  useSearchParams: () => [chatSearch.params, chatSearch.setParams],
+}));
 vi.mock('../context/SessionContext', () => ({
   useSession: () => ({
     session: {
@@ -34,6 +43,8 @@ describe('ChatPage', () => {
     vi.clearAllMocks();
     vi.mocked(sendChatMessage).mockReset();
     localStorage.clear();
+    chatSearch.params = new URLSearchParams();
+    chatSearch.setParams.mockReset();
   });
 
   it('greets an empty thread with the league name and hides it after the first send', async () => {
@@ -379,5 +390,64 @@ describe('ChatPage', () => {
       expect(JSON.parse(localStorage.getItem('theshowgpt.chat.archive.v1') ?? '[]')).toEqual([]),
     );
     confirmSpy.mockRestore();
+  });
+
+  it('sends an ?ask= prompt immediately as a new thread', async () => {
+    const prompt = playerResearchPrompt('Aaron Judge', true);
+    chatSearch.params = new URLSearchParams({ ask: prompt });
+    vi.mocked(sendChatMessage).mockResolvedValue(reply);
+
+    render(<ChatPage />);
+
+    expect(await screen.findByText(prompt)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(sendChatMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [{ role: 'user', content: prompt }],
+        }),
+        expect.anything(),
+      ),
+    );
+    expect(chatSearch.setParams).toHaveBeenCalled();
+  });
+
+  it('archives the open thread before sending an ?ask= prompt', async () => {
+    localStorage.setItem(
+      'theshowgpt.chat.v1',
+      JSON.stringify([
+        {
+          id: 'old',
+          role: 'user',
+          content: 'old question',
+          createdAt: '2026-07-05T00:00:00.000Z',
+        },
+        {
+          id: 'old-a',
+          role: 'assistant',
+          content: 'old reply',
+          createdAt: '2026-07-05T00:00:00.000Z',
+        },
+      ]),
+    );
+    const prompt = playerResearchPrompt('Aaron Judge', true);
+    chatSearch.params = new URLSearchParams({ ask: prompt });
+    vi.mocked(sendChatMessage).mockResolvedValue(reply);
+
+    render(<ChatPage />);
+
+    await waitFor(() =>
+      expect(sendChatMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [{ role: 'user', content: prompt }],
+        }),
+        expect.anything(),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByText('old question')).not.toBeInTheDocument());
+    await waitFor(() => {
+      const archived = JSON.parse(localStorage.getItem('theshowgpt.chat.archive.v1') ?? '[]');
+      expect(archived).toHaveLength(1);
+      expect(archived[0].title).toBe('old question');
+    });
   });
 });

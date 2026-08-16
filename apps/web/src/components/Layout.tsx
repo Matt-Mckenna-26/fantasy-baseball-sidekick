@@ -46,7 +46,7 @@ function ShellBrand() {
 const authedNavItems = [
   { to: '/chat', label: 'TheShowGPT' },
   { to: '/rosters', label: 'Rosters' },
-  { to: '/scores', label: 'Scores' },
+  { to: '/scores', label: 'MLB Scores' },
   { to: '/standings', label: 'Live Standings' },
   { to: '/matchups', label: 'Matchups' },
   { to: '/stats', label: 'Players' },

@@ -1,6 +1,10 @@
 import {
   normalizePlayerName,
   normalizeTeamAbbr,
+  playerGameLogResponseSchema,
+  type PlayerGameLogBatting,
+  type PlayerGameLogPitching,
+  type PlayerGameLogResponse,
   type StatColumn,
   type StatRange,
   type StatValue,
@@ -175,6 +179,9 @@ export function resolvePersonId(
 
 interface RawSplit {
   date?: string;
+  isHome?: boolean;
+  opponent?: { abbreviation?: string; name?: string };
+  game?: { gamePk?: number };
   stat?: Record<string, unknown>;
 }
 interface RawStatGroup {
@@ -470,9 +477,12 @@ export async function buildMlbStatValues(params: {
   group: StatGroup;
   range: StatRange;
   season?: number;
+  /** Override the window's end date (YYYY-MM-DD). Used for a past "today" game day. */
+  asOfDate?: string;
 }): Promise<MlbStatValuesResult> {
   const { players, columns, group, range } = params;
-  const season = params.season ?? Number(easternToday().slice(0, 4));
+  const asOf = params.asOfDate ?? easternToday();
+  const season = params.season ?? Number(asOf.slice(0, 4));
   const byName = await loadIdentityMap(season);
 
   const personIdByPlayer = new Map<string, number>();
@@ -483,7 +493,7 @@ export async function buildMlbStatValues(params: {
 
   const uniquePersonIds = [...new Set(personIdByPlayer.values())];
   const logsByPerson = await fetchGameLogs(uniquePersonIds, group, season);
-  const window = windowBounds(range);
+  const window = windowBounds(range, asOf);
 
   const byPlayerId = new Map<string, StatValue[]>();
   const unmappedLabels = new Set<string>();
@@ -509,4 +519,142 @@ export async function buildMlbStatValues(params: {
     );
   }
   return { byPlayerId, matched, unmatched };
+}
+
+/* ------------------------------ player game log --------------------------- */
+
+/** How many recent games to return in the player-focus log (newest first). */
+const DEFAULT_GAME_LOG_LIMIT = 15;
+const MAX_GAME_LOG_LIMIT = 40;
+
+function statCount(stat: Record<string, unknown>, key: string): number {
+  return toNum(stat[key]) ?? 0;
+}
+
+function splitGameMeta(sp: RawSplit): {
+  date: string;
+  opponent?: string;
+  home?: boolean;
+  gamePk?: number;
+} | null {
+  if (typeof sp.date !== 'string' || sp.date.length === 0) return null;
+  const abbr = sp.opponent?.abbreviation;
+  return {
+    date: sp.date,
+    ...(abbr ? { opponent: normalizeTeamAbbr(abbr) } : {}),
+    ...(typeof sp.isHome === 'boolean' ? { home: sp.isHome } : {}),
+    ...(typeof sp.game?.gamePk === 'number' && sp.game.gamePk > 0 ? { gamePk: sp.game.gamePk } : {}),
+  };
+}
+
+function newestFirst(a: { date: string }, b: { date: string }): number {
+  return b.date.localeCompare(a.date);
+}
+
+function pitchingDecision(stat: Record<string, unknown>): string | undefined {
+  if (statCount(stat, 'wins') >= 1) return 'W';
+  if (statCount(stat, 'losses') >= 1) return 'L';
+  if (statCount(stat, 'saves') >= 1) return 'SV';
+  if (statCount(stat, 'holds') >= 1) return 'HLD';
+  if (statCount(stat, 'blownSaves') >= 1) return 'BS';
+  return undefined;
+}
+
+function splitInningsPitched(stat: Record<string, unknown>): string {
+  const raw = stat.inningsPitched;
+  if (typeof raw === 'string' && raw.trim() !== '') return raw;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw);
+  const outs = toNum(stat.outs) ?? ipToOuts(raw);
+  return outs !== null ? formatIp(outs) : '0.0';
+}
+
+/**
+ * Map MLB hitting game-log splits to newest-first batting lines. Pure and exported
+ * for unit tests against captured payloads. Splits without a date are dropped.
+ */
+export function mapBattingGameLog(splits: RawSplit[], limit: number): PlayerGameLogBatting[] {
+  const lines: PlayerGameLogBatting[] = [];
+  for (const sp of splits) {
+    const meta = splitGameMeta(sp);
+    if (!meta) continue;
+    const stat = sp.stat ?? {};
+    const ab = statCount(stat, 'atBats');
+    const h = statCount(stat, 'hits');
+    const avg = ab > 0 ? rate3(h / ab) : null;
+    lines.push({
+      ...meta,
+      ab,
+      r: statCount(stat, 'runs'),
+      h,
+      doubles: statCount(stat, 'doubles'),
+      triples: statCount(stat, 'triples'),
+      hr: statCount(stat, 'homeRuns'),
+      rbi: statCount(stat, 'rbi'),
+      bb: statCount(stat, 'baseOnBalls'),
+      so: statCount(stat, 'strikeOuts'),
+      sb: statCount(stat, 'stolenBases'),
+      ...(avg ? { avg } : {}),
+    });
+  }
+  return lines.sort(newestFirst).slice(0, limit);
+}
+
+/**
+ * Map MLB pitching game-log splits to newest-first pitching lines. Pure and
+ * exported for unit tests against captured payloads. Splits without a date are dropped.
+ */
+export function mapPitchingGameLog(splits: RawSplit[], limit: number): PlayerGameLogPitching[] {
+  const lines: PlayerGameLogPitching[] = [];
+  for (const sp of splits) {
+    const meta = splitGameMeta(sp);
+    if (!meta) continue;
+    const stat = sp.stat ?? {};
+    const decision = pitchingDecision(stat);
+    const pitches = toNum(stat.numberOfPitches);
+    lines.push({
+      ...meta,
+      ip: splitInningsPitched(stat),
+      h: statCount(stat, 'hits'),
+      r: statCount(stat, 'runs'),
+      er: statCount(stat, 'earnedRuns'),
+      bb: statCount(stat, 'baseOnBalls'),
+      so: statCount(stat, 'strikeOuts'),
+      hr: statCount(stat, 'homeRuns'),
+      ...(decision ? { decision } : {}),
+      ...(pitches !== null ? { pitches } : {}),
+    });
+  }
+  return lines.sort(newestFirst).slice(0, limit);
+}
+
+/**
+ * Recent per-game batting and pitching lines for a player, resolved by name (+ optional
+ * team hint) against the season identity map. Fails soft to unmatched + empty lists so
+ * the player-focus card always renders. Anonymous public MLB Stats GETs only.
+ */
+export async function getPlayerGameLog(
+  name: string,
+  opts: { teamAbbr?: string; season?: number; limit?: number } = {},
+): Promise<PlayerGameLogResponse> {
+  const empty = (): PlayerGameLogResponse =>
+    playerGameLogResponseSchema.parse({ player: name, matched: false, batting: [], pitching: [] });
+  const season = opts.season ?? Number(easternToday().slice(0, 4));
+  const limit = Math.min(Math.max(opts.limit ?? DEFAULT_GAME_LOG_LIMIT, 1), MAX_GAME_LOG_LIMIT);
+  try {
+    const byName = await loadIdentityMap(season);
+    const personId = resolvePersonId(byName, name, opts.teamAbbr);
+    if (personId === undefined) return empty();
+    const [hitting, pitching] = await Promise.all([
+      fetchGameLogs([personId], 'hitting', season),
+      fetchGameLogs([personId], 'pitching', season),
+    ]);
+    return playerGameLogResponseSchema.parse({
+      player: name,
+      matched: true,
+      batting: mapBattingGameLog(hitting.get(personId) ?? [], limit),
+      pitching: mapPitchingGameLog(pitching.get(personId) ?? [], limit),
+    });
+  } catch {
+    return empty();
+  }
 }
