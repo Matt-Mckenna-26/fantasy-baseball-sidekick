@@ -39,31 +39,32 @@
   container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
   min-width: 0;
-  padding: 0.85rem 0.95rem;
+  padding: 0.75rem 0.85rem;
   text-align: right;
-  background: var(--panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 48%), var(--panel);
   border: 1px solid var(--border);
   border-left: 4px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.18),
-    0 10px 28px rgba(0, 0, 0, 0.14);
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
 }
 
 /* Tone reads three ways (never color alone): border accent, tinted wash, and the
    icon + "Best/Worst" cue rendered in the markup. */
 .leaderCardHot {
-  border-left-color: #f87171;
+  border-left-color: var(--hot);
   background:
-    linear-gradient(150deg, rgba(248, 113, 113, 0.12), rgba(248, 113, 113, 0) 62%), var(--panel);
+    linear-gradient(150deg, rgba(255, 107, 74, 0.16), rgba(255, 107, 74, 0) 62%), var(--panel);
 }
 
 .leaderCardCold {
-  border-left-color: #60a5fa;
+  border-left-color: var(--cold);
   background:
-    linear-gradient(150deg, rgba(96, 165, 250, 0.12), rgba(96, 165, 250, 0) 62%), var(--panel);
+    linear-gradient(150deg, rgba(91, 157, 255, 0.16), rgba(91, 157, 255, 0) 62%), var(--panel);
 }
 
 .leaderEyebrow {
@@ -97,11 +98,11 @@
 }
 
 .leaderCardHot .leaderValue {
-  color: #f87171;
+  color: var(--hot);
 }
 
 .leaderCardCold .leaderValue {
-  color: #60a5fa;
+  color: var(--cold);
 }
 
 .leaderTeam {
@@ -142,30 +143,42 @@
 
 /* Phones: horizontal scroll-snap strip (peek next card) instead of cramped 3-up. */
 @media (max-width: 640px) {
+  .leaders {
+    margin-bottom: 0.75rem;
+  }
+
   .leadersGrid {
     display: flex;
-    gap: 0.55rem;
+    gap: 0.45rem;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    scroll-padding-inline: 0.15rem;
-    padding-bottom: 0.2rem;
+    scroll-padding-inline: 0.1rem;
+    padding-bottom: 0.1rem;
     -webkit-overflow-scrolling: touch;
-    /* Override the inline repeat(N, 1fr) from the board markup. */
+    scrollbar-width: none;
     grid-template-columns: unset !important;
   }
 
+  .leadersGrid::-webkit-scrollbar {
+    display: none;
+  }
+
   .leaderCard {
-    flex: 0 0 min(14.5rem, 78vw);
-    gap: 0.3rem;
-    padding: 0.65rem 0.75rem;
+    flex: 0 0 min(11.5rem, 42vw);
+    gap: 0.2rem;
+    padding: 0.5rem 0.6rem;
     border-left-width: 3px;
     border-radius: 12px;
     scroll-snap-align: start;
   }
 
+  .leaderValue {
+    font-size: clamp(1.25rem, 22cqi, 1.85rem);
+  }
+
   .leaderAvatar {
-    width: 1.4rem;
-    height: 1.4rem;
+    width: 1.2rem;
+    height: 1.2rem;
   }
 }
 
@@ -267,25 +280,26 @@
 
 /* Movement cue reads by symbol + color: green for adds, muted red for drops. */
 .txAdd {
-  color: #34d399;
+  color: var(--grass);
   font-weight: 700;
 }
 
 .txDrop {
-  color: #f87171;
+  color: var(--hot);
   font-weight: 700;
 }
 
 /* Projected rank movers between the matchup carousel and standings table. */
 .movers {
-  margin-bottom: 1.25rem;
-  padding: 0.85rem 1rem;
-  background: var(--panel);
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 48%), var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.18),
-    0 8px 24px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
 }
 
 .moversHeader {
@@ -349,27 +363,27 @@
 }
 
 .moverHot .inlineTeamName {
-  color: #f87171;
+  color: var(--hot);
 }
 
 .moverCold .inlineTeamName {
-  color: #60a5fa;
+  color: var(--cold);
 }
 
 @media (max-width: 640px) {
   .movers {
-    margin-left: -0.15rem;
-    margin-right: -0.15rem;
-    padding: 0.65rem 0.75rem;
-    border-radius: 10px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0.5rem 0.65rem;
+    border-radius: 12px;
   }
 
   .moverLine {
-    font-size: 0.85rem;
+    font-size: 0.78rem;
   }
 
   .inlineTeamName {
-    max-width: 10rem;
+    max-width: 8.5rem;
   }
 }
 
@@ -383,4 +397,64 @@
 .teamLink:hover .teamLinkName,
 .teamLink:focus-visible .teamLinkName {
   text-decoration: underline;
+}
+
+/* Phones: give TEAM the leftover width; shrink rank/record/GB/moves to content. */
+@media (max-width: 640px) {
+  .standingsTable {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .standingsTable th:nth-child(1),
+  .standingsTable td:nth-child(1) {
+    width: 2.35rem;
+    min-width: 2.35rem;
+    padding-left: 0.28rem;
+    padding-right: 0.15rem;
+  }
+
+  .standingsTable th:nth-child(2),
+  .standingsTable td:nth-child(2) {
+    width: auto;
+    min-width: 8rem;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  .standingsTable th:nth-child(3),
+  .standingsTable td:nth-child(3) {
+    width: 4.7rem;
+    min-width: 4.7rem;
+    padding-left: 0.18rem;
+    padding-right: 0.18rem;
+  }
+
+  .standingsTable th:nth-child(4),
+  .standingsTable td:nth-child(4) {
+    width: 2.6rem;
+    min-width: 2.6rem;
+    padding-left: 0.12rem;
+    padding-right: 0.12rem;
+  }
+
+  .standingsTable th:nth-child(5),
+  .standingsTable td:nth-child(5) {
+    width: 2.3rem;
+    min-width: 2.3rem;
+    padding-left: 0.12rem;
+    padding-right: 0.12rem;
+  }
+
+  .standingsTable th:nth-child(6),
+  .standingsTable td:nth-child(6) {
+    width: 2.45rem;
+    min-width: 2.45rem;
+    padding-left: 0.12rem;
+    padding-right: 0.22rem;
+  }
+
+  .standingsTable .playerName {
+    max-width: 100%;
+  }
 }

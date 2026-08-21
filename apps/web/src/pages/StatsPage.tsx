@@ -9,7 +9,6 @@ import type {
 } from '@fcm/contracts';
 import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
 import {
-  themeQuartz,
   type ColDef,
   type GetRowIdParams,
   type GridApi,
@@ -39,6 +38,13 @@ import { PlayerTrendHelp } from '../components/charts/PlayerTrendHelp';
 import { PlayerPicker, type PlayerOption } from '../components/charts/PlayerPicker';
 import { buildTeamColorMap } from '../components/charts/palette';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
+import {
+  gridTheme,
+  gridThemeNarrow,
+  NARROW_BADGE_COL,
+  NARROW_IDENTITY_COL,
+  NARROW_STAT_COL,
+} from '../lib/gridTheme';
 import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
 import { scoringColumns, toCompareEntity, toStatRow, type StatRow } from '../lib/statPool';
 import { VALUE_PLUS_EXPLAINER, VALUE_PLUS_UNQUALIFIED, valuePlusTitle } from '../lib/valuePlus';
@@ -96,20 +102,6 @@ function topByRank(players: PlayerStatLine[], count: number): string[] {
     .slice(0, count)
     .map((p) => p.player.playerId);
 }
-
-/** Dark ag-grid theme tuned to the app's design tokens (styles.css). */
-const gridTheme = themeQuartz.withParams({
-  backgroundColor: '#1e293b',
-  foregroundColor: '#e2e8f0',
-  headerTextColor: '#94a3b8',
-  headerBackgroundColor: '#1e293b',
-  borderColor: '#334155',
-  chromeBackgroundColor: '#1e293b',
-  oddRowBackgroundColor: 'rgba(148, 163, 184, 0.04)',
-  rowHoverColor: 'rgba(148, 163, 184, 0.08)',
-  accentColor: '#7c3aed',
-  fontFamily: 'inherit',
-});
 
 export function StatsPage() {
   const state = useFirstLeagueResource(getPlayerStats);
@@ -467,7 +459,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         headerName: 'Rank',
         field: 'overallRank',
         type: 'numericColumn',
-        width: 88,
+        ...(isNarrow ? NARROW_BADGE_COL : { width: 88 }),
         ...(pinMeta ? { pinned: 'left' as const } : {}),
         headerTooltip: 'Overall season rank across the league player pool (lower is better)',
         cellRenderer: RankCell,
@@ -479,7 +471,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
         headerName: 'Value+',
         field: 'sgptPlus',
         type: 'numericColumn',
-        width: 96,
+        ...(isNarrow ? NARROW_BADGE_COL : { width: 96 }),
         ...(pinMeta ? { pinned: 'left' as const } : {}),
         headerTooltip: VALUE_PLUS_EXPLAINER,
         cellRenderer: SgptCell,
@@ -502,8 +494,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       {
         headerName: 'Player',
         field: 'fullName',
-        minWidth: isNarrow ? 150 : 200,
-        flex: 2,
+        ...(isNarrow ? NARROW_IDENTITY_COL : { minWidth: 200, flex: 2 }),
         pinned: 'left',
         cellRenderer: PlayerCell,
         tooltipField: 'fullName',
@@ -527,7 +518,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       headerName: col.label,
       field: col.key,
       type: 'numericColumn',
-      width: 92,
+      ...(isNarrow ? NARROW_STAT_COL : { width: 92 }),
       ...(col.description ? { headerTooltip: col.description } : {}),
       cellRenderer: PercentileHeatCell,
       cellStyle: { padding: 0 },
@@ -944,7 +935,7 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
             </div>
           ) : null}
           <AgGridReact<StatRow>
-            theme={gridTheme}
+            theme={isNarrow ? gridThemeNarrow : gridTheme}
             rowData={rows}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}
@@ -975,222 +966,220 @@ function StatsView({ initial, league }: { initial: PlayerStatsResponse; league: 
       {/* TODO: sync chart-control changes (metric/range/player selection) to the grid and
           charts automatically, so all three views stay in lockstep without manual re-entry. */}
       {columns.length > 0 && (
-        <ChartControlsPanel
-          anchorRef={chartsSectionRef}
-          seenKey="player-chart-controls-seen"
-          alwaysVisible
-        >
-          <div className={chartStyles.controlGroup}>
-            <span className={chartStyles.controlGroupLabel}>Metrics (compare)</span>
-            <p className={chartStyles.shortcutHint}>
-              Click a metric to toggle, double-click to isolate
-            </p>
-            <div
-              className={chartStyles.teamToggles}
-              role="group"
-              aria-label="Show or hide compare metrics"
-            >
-              <div className={chartStyles.teamToggleActions}>
-                <button
-                  type="button"
-                  className={chartStyles.teamToggleAction}
-                  onClick={() => setHiddenMetrics(new Set())}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className={chartStyles.teamToggleAction}
-                  onClick={() => setHiddenMetrics(new Set(columns.map((c) => c.key)))}
-                >
-                  None
-                </button>
-              </div>
-              {columns.map((col) => {
-                const hidden = hiddenMetrics.has(col.key);
-                return (
-                  <button
-                    key={col.key}
-                    type="button"
-                    aria-pressed={!hidden}
-                    title={`${col.description ?? col.label} \u2014 click to toggle, double-click to isolate`}
-                    className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
-                    onClick={() => toggleMetric(col.key)}
-                    onDoubleClick={() => isolateMetric(col.key)}
-                  >
-                    {col.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {!isAdvanced ? (
-            <div className={chartStyles.controlGroup}>
-              <label className={chartStyles.controlGroupLabel} htmlFor="player-trend-metric">
-                Trend metric
-              </label>
-              <select
-                id="player-trend-metric"
-                className={styles.select}
-                value={effectiveMetric}
-                onChange={(e) => setSelectedMetric(e.target.value)}
-              >
-                {columns.map((col) => (
-                  <option key={col.key} value={col.key}>
-                    {col.description ?? col.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {!isAdvanced ? (
-            <div className={chartStyles.controlGroup}>
-              <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
-              <div className={styles.rangeToggle} role="group" aria-label="Compare range">
-                {visibleRanges.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
-                    aria-pressed={r.value === range}
-                    onClick={() => setRange(r.value)}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className={chartStyles.controlGroup}>
-            <span className={chartStyles.controlGroupLabel}>
-              Players ({tab === 'batting' ? 'Batters' : 'Pitchers'})
-            </span>
-            {teamShortcuts.length > 0 && (
-              <>
-                <p className={chartStyles.shortcutHint}>
-                  Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to
-                  compare
-                </p>
-                <div
-                  className={chartStyles.teamToggles}
-                  role="group"
-                  aria-label="Load a fantasy team's players"
-                >
-                  {teamShortcuts.map((t) => {
-                    const active = loadedOwners.includes(t.owner);
-                    return (
-                      <button
-                        key={t.owner}
-                        type="button"
-                        aria-pressed={active}
-                        className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
-                        onClick={() => toggleTeam(t)}
-                      >
-                        <EntityAvatar
-                          label={t.owner}
-                          {...(t.logoUrl ? { imageUrl: t.logoUrl } : {})}
-                        />
-                        {t.owner}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            <PlayerPicker
-              options={playerOptions}
-              tiles={tiles}
-              inactive={inactive}
-              colorMap={colorMap}
-              cap={PLAYER_CAP}
-              presetCount={presetIds.length}
-              onAdd={addTile}
-              onRemove={removeTile}
-              onToggle={toggleTile}
-              onSolo={soloTile}
-              onClear={clearTiles}
-              onPreset={loadPreset}
-            />
-          </div>
-        </ChartControlsPanel>
-      )}
-
-      {canCompare ? (
-        <section
-          id="compare"
-          ref={compareCardRef}
-          className={`${chartStyles.card} ${gridStyles.compareCard} ${gridStyles.scrollAnchor}`}
-          aria-label="Player metric comparison"
-        >
-          <div className={chartStyles.header}>
-            <div>
-              <h2 className={chartStyles.title}>
-                Comparing {compareLines.length} {tab === 'batting' ? 'batters' : 'pitchers'}
-              </h2>
-              <p className={chartStyles.subtitle}>
-                Percentile among {poolDesc} &middot; {rangeText} &middot; {compareColumns.length} of{' '}
-                {columns.length} metrics
-              </p>
-            </div>
-          </div>
-          {compareColumns.length === 0 ? (
-            <p className={chartStyles.empty}>Pick at least one metric in chart controls.</p>
-          ) : (
-            <>
-              <CompareMetricsPanel
-                entities={compareEntities}
-                columns={compareColumns}
-                percentiles={percentiles}
-                ranks={ranks}
-                exportTitle={`Comparing ${compareLines.length} ${tab === 'batting' ? 'batters' : 'pitchers'}`}
-                exportSubtitle={`Percentile among ${poolDesc} · ${rangeText} · ${compareColumns.length} of ${columns.length} metrics`}
-                exportFilename={`${tab}-compare`}
-              />
-            </>
-          )}
-        </section>
-      ) : null}
-
-      {!isAdvanced && columns.length > 0 && (
         <div className={gridStyles.chartsSection} ref={chartsSectionRef}>
-          <section
-            id="trends"
-            ref={trendSectionRef}
-            className={`${chartStyles.card} ${gridStyles.scrollAnchor}`}
-            aria-label={`${metricLabel} recent form`}
-          >
-            <div className={chartStyles.header}>
-              <div>
-                <div className={gridStyles.tableCardTitleRow}>
-                  <h2 className={`${chartStyles.title} ${gridStyles.tableCardTitleInRow}`}>
-                    {metricLabel} recent form
-                  </h2>
-                  <PlayerTrendHelp />
+          <ChartControlsPanel anchorRef={chartsSectionRef} seenKey="player-chart-controls-seen">
+            <div className={chartStyles.controlGroup}>
+              <span className={chartStyles.controlGroupLabel}>Metrics (compare)</span>
+              <p className={chartStyles.shortcutHint}>
+                Click a metric to toggle, double-click to isolate
+              </p>
+              <div
+                className={chartStyles.teamToggles}
+                role="group"
+                aria-label="Show or hide compare metrics"
+              >
+                <div className={chartStyles.teamToggleActions}>
+                  <button
+                    type="button"
+                    className={chartStyles.teamToggleAction}
+                    onClick={() => setHiddenMetrics(new Set())}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    className={chartStyles.teamToggleAction}
+                    onClick={() => setHiddenMetrics(new Set(columns.map((c) => c.key)))}
+                  >
+                    None
+                  </button>
                 </div>
-                <p className={chartStyles.subtitle}>
-                  Percentile among {poolDesc}; dashed line is each player&rsquo;s season baseline
-                </p>
+                {columns.map((col) => {
+                  const hidden = hiddenMetrics.has(col.key);
+                  return (
+                    <button
+                      key={col.key}
+                      type="button"
+                      aria-pressed={!hidden}
+                      title={`${col.description ?? col.label} \u2014 click to toggle, double-click to isolate`}
+                      className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
+                      onClick={() => toggleMetric(col.key)}
+                      onDoubleClick={() => isolateMetric(col.key)}
+                    >
+                      {col.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            {activeIds.length === 0 ? (
-              <p className={chartStyles.empty}>Search and add players above to see recent form.</p>
-            ) : !trendReady ? (
-              <ChartLoading
-                verbs={['Pulling recent windows', 'Reading the box scores', 'Charting the trend']}
-              />
-            ) : (
-              <PlayerTrendChart
-                rows={trend.rows}
-                seasonBaseline={trend.seasonBaseline}
-                players={trendPlayers}
-                metricLabel={metricLabel}
+
+            {!isAdvanced ? (
+              <div className={chartStyles.controlGroup}>
+                <label className={chartStyles.controlGroupLabel} htmlFor="player-trend-metric">
+                  Trend metric
+                </label>
+                <select
+                  id="player-trend-metric"
+                  className={styles.select}
+                  value={effectiveMetric}
+                  onChange={(e) => setSelectedMetric(e.target.value)}
+                >
+                  {columns.map((col) => (
+                    <option key={col.key} value={col.key}>
+                      {col.description ?? col.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {!isAdvanced ? (
+              <div className={chartStyles.controlGroup}>
+                <span className={chartStyles.controlGroupLabel}>Range (compare)</span>
+                <div className={styles.rangeToggle} role="group" aria-label="Compare range">
+                  {visibleRanges.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      className={r.value === range ? styles.rangeButtonActive : styles.rangeButton}
+                      aria-pressed={r.value === range}
+                      onClick={() => setRange(r.value)}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className={chartStyles.controlGroup}>
+              <span className={chartStyles.controlGroupLabel}>
+                Players ({tab === 'batting' ? 'Batters' : 'Pitchers'})
+              </span>
+              {teamShortcuts.length > 0 && (
+                <>
+                  <p className={chartStyles.shortcutHint}>
+                    Load up to two teams&rsquo; {tab === 'batting' ? 'batters' : 'pitchers'} to
+                    compare
+                  </p>
+                  <div
+                    className={chartStyles.teamToggles}
+                    role="group"
+                    aria-label="Load a fantasy team's players"
+                  >
+                    {teamShortcuts.map((t) => {
+                      const active = loadedOwners.includes(t.owner);
+                      return (
+                        <button
+                          key={t.owner}
+                          type="button"
+                          aria-pressed={active}
+                          className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
+                          onClick={() => toggleTeam(t)}
+                        >
+                          <EntityAvatar
+                            label={t.owner}
+                            {...(t.logoUrl ? { imageUrl: t.logoUrl } : {})}
+                          />
+                          {t.owner}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              <PlayerPicker
+                options={playerOptions}
+                tiles={tiles}
+                inactive={inactive}
                 colorMap={colorMap}
+                cap={PLAYER_CAP}
+                presetCount={presetIds.length}
+                onAdd={addTile}
+                onRemove={removeTile}
+                onToggle={toggleTile}
+                onSolo={soloTile}
+                onClear={clearTiles}
+                onPreset={loadPreset}
               />
-            )}
-          </section>
+            </div>
+          </ChartControlsPanel>
+
+          {canCompare ? (
+            <section
+              id="compare"
+              ref={compareCardRef}
+              className={`${chartStyles.card} ${gridStyles.compareCard} ${gridStyles.scrollAnchor}`}
+              aria-label="Player metric comparison"
+            >
+              <div className={chartStyles.header}>
+                <div>
+                  <h2 className={chartStyles.title}>
+                    Comparing {compareLines.length} {tab === 'batting' ? 'batters' : 'pitchers'}
+                  </h2>
+                  <p className={chartStyles.subtitle}>
+                    Percentile among {poolDesc} &middot; {rangeText} &middot;{' '}
+                    {compareColumns.length} of {columns.length} metrics
+                  </p>
+                </div>
+              </div>
+              {compareColumns.length === 0 ? (
+                <p className={chartStyles.empty}>Pick at least one metric in chart controls.</p>
+              ) : (
+                <>
+                  <CompareMetricsPanel
+                    entities={compareEntities}
+                    columns={compareColumns}
+                    percentiles={percentiles}
+                    ranks={ranks}
+                    exportTitle={`Comparing ${compareLines.length} ${tab === 'batting' ? 'batters' : 'pitchers'}`}
+                    exportSubtitle={`Percentile among ${poolDesc} · ${rangeText} · ${compareColumns.length} of ${columns.length} metrics`}
+                    exportFilename={`${tab}-compare`}
+                  />
+                </>
+              )}
+            </section>
+          ) : null}
+
+          {!isAdvanced && (
+            <section
+              id="trends"
+              ref={trendSectionRef}
+              className={`${chartStyles.card} ${gridStyles.scrollAnchor}`}
+              aria-label={`${metricLabel} recent form`}
+            >
+              <div className={chartStyles.header}>
+                <div>
+                  <div className={gridStyles.tableCardTitleRow}>
+                    <h2 className={`${chartStyles.title} ${gridStyles.tableCardTitleInRow}`}>
+                      {metricLabel} recent form
+                    </h2>
+                    <PlayerTrendHelp />
+                  </div>
+                  <p className={chartStyles.subtitle}>
+                    Percentile among {poolDesc}; dashed line is each player&rsquo;s season baseline
+                  </p>
+                </div>
+              </div>
+              {activeIds.length === 0 ? (
+                <p className={chartStyles.empty}>
+                  Search and add players above to see recent form.
+                </p>
+              ) : !trendReady ? (
+                <ChartLoading
+                  verbs={['Pulling recent windows', 'Reading the box scores', 'Charting the trend']}
+                />
+              ) : (
+                <PlayerTrendChart
+                  rows={trend.rows}
+                  seasonBaseline={trend.seasonBaseline}
+                  players={trendPlayers}
+                  metricLabel={metricLabel}
+                  colorMap={colorMap}
+                />
+              )}
+            </section>
+          )}
         </div>
       )}
     </section>

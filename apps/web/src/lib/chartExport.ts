@@ -99,7 +99,11 @@ function resolveSvgRasterSize(svg: SVGSVGElement): { width: number; height: numb
   };
 }
 
-function prepareSvgClone(svg: SVGSVGElement): { clone: SVGSVGElement; width: number; height: number } {
+function prepareSvgClone(svg: SVGSVGElement): {
+  clone: SVGSVGElement;
+  width: number;
+  height: number;
+} {
   const { width, height } = resolveSvgRasterSize(svg);
   const viewBox = svg.getAttribute('viewBox');
 
@@ -111,7 +115,9 @@ function prepareSvgClone(svg: SVGSVGElement): { clone: SVGSVGElement; width: num
   clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   clone.style.width = `${width}px`;
   clone.style.height = `${height}px`;
-  clone.querySelectorAll('.recharts-tooltip-cursor, .recharts-active-bar').forEach((el) => el.remove());
+  clone
+    .querySelectorAll('.recharts-tooltip-cursor, .recharts-active-bar')
+    .forEach((el) => el.remove());
 
   return { clone, width, height };
 }
@@ -149,7 +155,9 @@ function drawRasterizedChart(
 }
 
 /** Capture the compare chart - try SVG first, fall back to html2canvas. */
-async function captureCompareChart(root: HTMLElement): Promise<{ canvas: HTMLCanvasElement; width: number; height: number }> {
+async function captureCompareChart(
+  root: HTMLElement,
+): Promise<{ canvas: HTMLCanvasElement; width: number; height: number }> {
   // Find the chart surface
   const surface = root.querySelector('[data-chart-surface]');
   if (!(surface instanceof HTMLElement)) throw new Error('Chart surface not found');
@@ -171,7 +179,7 @@ async function captureCompareChart(root: HTMLElement): Promise<{ canvas: HTMLCan
       ctx.scale(2, 2);
       ctx.fillStyle = CHART_THEME.panel;
       ctx.fillRect(0, 0, width, height);
-      
+
       // Draw the SVG centered/scaled to fill the surface
       const svgRect = svg.getBoundingClientRect();
       const scale = Math.min(width / svgRect.width, height / svgRect.height);
@@ -180,7 +188,7 @@ async function captureCompareChart(root: HTMLElement): Promise<{ canvas: HTMLCan
       const drawX = (width - drawW) / 2;
       const drawY = (height - drawH) / 2;
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
-      
+
       return { canvas, width, height };
     } catch {
       // Fall through to html2canvas
@@ -198,7 +206,7 @@ async function captureCompareChart(root: HTMLElement): Promise<{ canvas: HTMLCan
     windowWidth: Math.max(width, 1200),
     windowHeight: Math.max(height, 600),
   });
-  
+
   return { canvas, width: canvas.width / 2, height: canvas.height / 2 };
 }
 
@@ -224,7 +232,9 @@ async function loadHeadshot(url: string): Promise<HTMLImageElement | null> {
   }
 }
 
-async function loadHeadshots(rows: TrendLegendRow[]): Promise<Map<string, HTMLImageElement | null>> {
+async function loadHeadshots(
+  rows: TrendLegendRow[],
+): Promise<Map<string, HTMLImageElement | null>> {
   const map = new Map<string, HTMLImageElement | null>();
   await Promise.all(
     rows.map(async (row) => {
@@ -276,7 +286,7 @@ function drawAvatar(
   if (img) {
     ctx.drawImage(img, x, y, size, size);
   } else {
-    ctx.fillStyle = '#334155';
+    ctx.fillStyle = CHART_THEME.border;
     ctx.fillRect(x, y, size, size);
     ctx.fillStyle = CHART_THEME.text;
     ctx.font = `700 ${Math.round(size * 0.38)}px system-ui, sans-serif`;
@@ -292,7 +302,10 @@ function drawAvatar(
   ctx.stroke();
 }
 
-function valueColumns(hasL21: boolean, hasL14: boolean): Array<{ key: keyof TrendLegendRow; label: string }> {
+function valueColumns(
+  hasL21: boolean,
+  hasL14: boolean,
+): Array<{ key: keyof TrendLegendRow; label: string }> {
   return [
     { key: 'l30', label: 'L30' },
     ...(hasL21 ? [{ key: 'l21' as const, label: 'L21' }] : []),
@@ -309,8 +322,7 @@ function measureLegendLayout(
   hasL14: boolean,
 ): { width: number; height: number; nameColW: number; valueCols: ReturnType<typeof valueColumns> } {
   const valueCols = valueColumns(hasL21, hasL14);
-  const playerPrefix =
-    LEGEND.swatch + LEGEND.gap + LEGEND.avatar + LEGEND.gap;
+  const playerPrefix = LEGEND.swatch + LEGEND.gap + LEGEND.avatar + LEGEND.gap;
 
   ctx.font = `600 ${LEGEND.nameSize}px system-ui, sans-serif`;
   let nameColW = ctx.measureText('Player').width;
@@ -320,15 +332,8 @@ function measureLegendLayout(
   }
   nameColW = Math.ceil(nameColW + playerPrefix);
 
-  const width =
-    LEGEND.pad * 2 +
-    nameColW +
-    valueCols.length * LEGEND.valueColW;
-  const height =
-    LEGEND.pad * 2 +
-    LEGEND.titleH +
-    LEGEND.headerH +
-    rows.length * LEGEND.rowH;
+  const width = LEGEND.pad * 2 + nameColW + valueCols.length * LEGEND.valueColW;
+  const height = LEGEND.pad * 2 + LEGEND.titleH + LEGEND.headerH + rows.length * LEGEND.rowH;
 
   return { width, height, nameColW, valueCols };
 }
@@ -342,7 +347,12 @@ function renderLegendCanvas(
 ): HTMLCanvasElement {
   const scratch = document.createElement('canvas');
   const measureCtx = scratch.getContext('2d')!;
-  const { width, height, nameColW, valueCols } = measureLegendLayout(measureCtx, rows, hasL21, hasL14);
+  const { width, height, nameColW, valueCols } = measureLegendLayout(
+    measureCtx,
+    rows,
+    hasL21,
+    hasL14,
+  );
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -525,8 +535,7 @@ function measureCompareTilesLayout(
   }
 
   const maxStats = tiles.reduce((max, tile) => Math.max(max, tile.stats.length), 0);
-  const height =
-    COMPARE_TILE.pad * 2 + headH + maxStats * COMPARE_TILE.statRowH;
+  const height = COMPARE_TILE.pad * 2 + headH + maxStats * COMPARE_TILE.statRowH;
 
   return { tileW, height };
 }
@@ -561,14 +570,7 @@ function renderCompareTilesCanvas(
 
     const avatarX = x + COMPARE_TILE.pad;
     const avatarY = COMPARE_TILE.pad + 2;
-    drawAvatar(
-      ctx,
-      avatarX,
-      avatarY,
-      COMPARE_TILE.avatar,
-      headshots.get(tile.id),
-      tile.name,
-    );
+    drawAvatar(ctx, avatarX, avatarY, COMPARE_TILE.avatar, headshots.get(tile.id), tile.name);
 
     const nameX = avatarX + COMPARE_TILE.avatar + 8;
     const nameMaxW = tileW - COMPARE_TILE.pad - nameX + x;
@@ -605,11 +607,7 @@ function renderCompareTilesCanvas(
 
       ctx.fillStyle = CHART_THEME.text;
       ctx.font = `500 ${COMPARE_TILE.valueSize}px ui-monospace, monospace`;
-      ctx.fillText(
-        truncateText(ctx, stat.display, valueColW - 4),
-        labelX + labelColW,
-        rowMid,
-      );
+      ctx.fillText(truncateText(ctx, stat.display, valueColW - 4), labelX + labelColW, rowMid);
 
       const rankLabel = stat.rank == null ? '\u2013' : ordinal(stat.rank);
       ctx.font = `600 ${COMPARE_TILE.rankSize}px ui-monospace, monospace`;
@@ -870,10 +868,7 @@ export async function downloadTrendChartPng(options: {
   const subtitleH = 22;
   const gap = 20;
 
-  const [chartImg, headshots] = await Promise.all([
-    svgToImage(svg),
-    loadHeadshots(legendRows),
-  ]);
+  const [chartImg, headshots] = await Promise.all([svgToImage(svg), loadHeadshots(legendRows)]);
   const legendCanvas = renderLegendCanvas(legendRows, metricLabel, hasL21, hasL14, headshots);
   const legendDrawW = legendCanvas.width;
   const legendDrawH = legendCanvas.height;

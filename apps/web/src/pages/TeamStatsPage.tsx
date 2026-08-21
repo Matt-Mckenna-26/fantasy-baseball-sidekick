@@ -7,7 +7,7 @@ import type {
   TeamStatWindow,
 } from '@fcm/contracts';
 import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
-import { themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
+import { type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
 import { getLeagueTeamStats } from '../api/client';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
 import { useIsNarrow } from '../hooks/useIsNarrow';
@@ -25,6 +25,7 @@ import { ChartLoading } from '../components/charts/ChartLoading';
 import { ChartControlsPanel } from '../components/charts/ChartControlsPanel';
 import { buildTeamColorMap } from '../components/charts/palette';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
+import { gridTheme, gridThemeNarrow, NARROW_IDENTITY_COL, NARROW_STAT_COL } from '../lib/gridTheme';
 import { buildStatPercentiles, buildStatRanks } from '../lib/percentile';
 import {
   buildTrendSeries,
@@ -81,20 +82,6 @@ function coverageLabel(data: LeagueTeamStatsResponse): string {
   if (weeks.length === 0) return 'Full season';
   return `Weeks ${weeks[0]}\u2013${weeks[weeks.length - 1]} combined`;
 }
-
-/** Dark ag-grid theme tuned to the app's design tokens (styles.css). */
-const gridTheme = themeQuartz.withParams({
-  backgroundColor: '#1e293b',
-  foregroundColor: '#e2e8f0',
-  headerTextColor: '#94a3b8',
-  headerBackgroundColor: '#1e293b',
-  borderColor: '#334155',
-  chromeBackgroundColor: '#1e293b',
-  oddRowBackgroundColor: 'rgba(148, 163, 184, 0.04)',
-  rowHoverColor: 'rgba(148, 163, 184, 0.08)',
-  accentColor: '#7c3aed',
-  fontFamily: 'inherit',
-});
 
 export function TeamStatsPage() {
   const state = useFirstLeagueResource(getLeagueTeamStats);
@@ -212,9 +199,7 @@ function TeamStatsView({
   // grouped "compare" card. Ranked against the whole pool via `percentiles` above.
   const compareTeams = useMemo<TeamStatLine[]>(() => {
     const byId = new Map(data.teams.map((t) => [t.teamId, t]));
-    return topRowIds
-      .map((id) => byId.get(id))
-      .filter((t): t is TeamStatLine => Boolean(t));
+    return topRowIds.map((id) => byId.get(id)).filter((t): t is TeamStatLine => Boolean(t));
   }, [topRowIds, data.teams]);
   const canCompare = compareTeams.length >= 1;
   const compareCardRef = useRef<HTMLElement | null>(null);
@@ -251,9 +236,7 @@ function TeamStatsView({
     setShowCompareDialog(false);
     if (!api || ids.length === 0) return;
     const byId = new Map(data.teams.map((t) => [t.teamId, t]));
-    const names = ids
-      .map((id) => byId.get(id)?.teamName)
-      .filter((n): n is string => Boolean(n));
+    const names = ids.map((id) => byId.get(id)?.teamName).filter((n): n is string => Boolean(n));
     if (names.length === 0) return;
     api.setFilterModel({ ...api.getFilterModel(), teamName: names });
     requestAnimationFrame(() =>
@@ -268,8 +251,7 @@ function TeamStatsView({
       {
         headerName: 'Team',
         field: 'teamName',
-        minWidth: isNarrow ? 140 : 200,
-        flex: 2,
+        ...(isNarrow ? NARROW_IDENTITY_COL : { minWidth: 200, flex: 2 }),
         ...(isNarrow ? { pinned: 'left' as const } : {}),
         cellRenderer: TeamCell,
         tooltipField: 'teamName',
@@ -280,7 +262,7 @@ function TeamStatsView({
       headerName: col.label,
       field: col.key,
       type: 'numericColumn',
-      width: 92,
+      ...(isNarrow ? NARROW_STAT_COL : { width: 92 }),
       ...(col.description ? { headerTooltip: col.description } : {}),
       cellRenderer: PercentileHeatCell,
       cellStyle: { padding: 0 },
@@ -485,7 +467,7 @@ function TeamStatsView({
         </div>
         <div className={gridStyles.gridWrap}>
           <AgGridReact<TeamStatRow>
-            theme={gridTheme}
+            theme={isNarrow ? gridThemeNarrow : gridTheme}
             rowData={rows}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}

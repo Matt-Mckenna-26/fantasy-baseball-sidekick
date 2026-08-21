@@ -157,7 +157,7 @@ function StandingsView({ data, league }: { data: LiveStandingsData; league: Leag
 
       <div className={tableStyles.tableCard}>
         <div className={tableStyles.tableScroll}>
-          <table className={tableStyles.table}>
+          <table className={`${tableStyles.table} ${styles.standingsTable}`}>
             <thead>
               <tr>
                 <th className={`${tableStyles.num} ${tableStyles.stickyCol}`}>Rank</th>
@@ -246,11 +246,12 @@ function RecentTransactionsCard({ transactions }: { transactions: LeagueTransact
                 <td>
                   <div className={styles.txPlayers}>
                     {tx.players.map((p, i) => (
-                      <span key={`${tx.transactionId}-${p.playerId}-${i}`} className={styles.txPlayer}>
+                      <span
+                        key={`${tx.transactionId}-${p.playerId}-${i}`}
+                        className={styles.txPlayer}
+                      >
                         <span
-                          className={
-                            p.movement === 'drop' ? styles.txDrop : styles.txAdd
-                          }
+                          className={p.movement === 'drop' ? styles.txDrop : styles.txAdd}
                           aria-hidden="true"
                         >
                           {p.movement === 'drop' ? '−' : p.movement === 'trade' ? '⇄' : '+'}

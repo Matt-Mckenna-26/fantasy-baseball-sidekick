@@ -1,21 +1,45 @@
 .shell {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
+/* Night-diamond atmosphere: floodlights + infield, kept off the chat star field. */
+.shell:not(.shellChat)::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 640px at 12% -10%, rgba(109, 77, 255, 0.28), transparent 58%),
+    radial-gradient(900px 520px at 92% 8%, rgba(232, 196, 122, 0.1), transparent 52%),
+    radial-gradient(800px 480px at 50% 118%, rgba(61, 214, 140, 0.12), transparent 55%),
+    radial-gradient(70% 40% at 50% 100%, rgba(18, 28, 22, 0.55), transparent 70%), var(--bg);
+}
+
 .header {
-  padding: 0.75rem 1.5rem;
-  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: 0.55rem 1.25rem;
+  background: var(--glass);
   border-bottom: 1px solid var(--border);
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 10px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .headerBar {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .brandSlot {
@@ -24,31 +48,29 @@
 
 .title {
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .brandBadge {
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.35rem 0.9rem 0.35rem 0.4rem;
-  border: 1px solid rgba(109, 40, 217, 0.38);
-  border-radius: 999px;
-  background: linear-gradient(
-    135deg,
-    rgba(109, 40, 217, 0.16) 0%,
-    rgba(15, 23, 42, 0.55) 100%
-  );
+  gap: 0.55rem;
+  padding: 0.28rem 0.8rem 0.28rem 0.32rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(135deg, rgba(109, 77, 255, 0.22) 0%, rgba(15, 23, 42, 0.2) 100%), var(--glass);
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    inset 0 1px 0 var(--highlight),
+    0 4px 14px rgba(0, 0, 0, 0.18);
   max-width: min(100%, 22rem);
 }
 
 .brandAvatar {
-  width: 2.1rem;
-  height: 2.1rem;
-  border: 2px solid rgba(167, 139, 250, 0.45);
-  box-shadow: 0 2px 8px rgba(109, 40, 217, 0.28);
+  width: 1.95rem;
+  height: 1.95rem;
+  border: 1.5px solid rgba(167, 139, 250, 0.5);
+  box-shadow: 0 2px 10px rgba(109, 77, 255, 0.32);
 }
 
 .brandTitle {
@@ -56,12 +78,13 @@
   flex-direction: column;
   align-items: flex-start;
   min-width: 0;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .brandTeam {
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 700;
+  letter-spacing: -0.015em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -70,7 +93,7 @@
 }
 
 .brandTagline {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.01em;
@@ -85,7 +108,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem 1rem;
+  gap: 0.2rem;
 }
 
 .actions {
@@ -99,9 +122,26 @@
   align-items: center;
   color: var(--muted);
   text-decoration: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
+  padding: 0.38rem 0.7rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
   line-height: 1;
+  font-size: 0.86rem;
+  font-weight: 600;
+  transition:
+    color var(--duration) var(--ease-out),
+    background var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
+}
+
+.navLink:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.navLink:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .navLabel {
@@ -125,7 +165,7 @@
   width: 0.9rem;
   height: 0.9rem;
   flex-shrink: 0;
-  color: #86efac;
+  color: var(--grass);
 }
 
 .navLabel .liveDot {
@@ -136,11 +176,11 @@
 .liveDot {
   display: block;
   flex-shrink: 0;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.45rem;
+  height: 0.45rem;
   margin-right: 0.4rem;
   border-radius: 50%;
-  background: #ef4444;
+  background: var(--live);
   animation: livePulse 1.4s ease-in-out infinite;
 }
 
@@ -148,11 +188,11 @@
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+    box-shadow: 0 0 0 0 rgba(255, 75, 106, 0.6);
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 0 0.28rem rgba(239, 68, 68, 0);
+    box-shadow: 0 0 0 0.28rem rgba(255, 75, 106, 0);
   }
 }
 
@@ -160,25 +200,31 @@
   .liveDot {
     animation: none;
   }
+
+  .navLink {
+    transition: none;
+  }
 }
 
 .navLinkActive {
   color: var(--text);
-  background: rgba(109, 40, 217, 0.25);
+  background: var(--accent-soft);
+  border-color: rgba(139, 116, 255, 0.4);
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .main {
   position: relative;
   flex: 1;
   min-width: 0;
-  padding: 2rem 1.5rem;
+  padding: 1.35rem 1.25rem 1.75rem;
   max-width: 720px;
   width: 100%;
   margin: 0 auto;
 }
 
 .mainWide {
-  max-width: min(100%, 72rem);
+  max-width: min(100%, 76rem);
 }
 
 /* Chat fills the viewport below the header — composer docks to the bottom. */
@@ -201,10 +247,12 @@
 }
 
 .footer {
-  padding: 1rem 1.5rem;
-  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding: 0.7rem 1.25rem;
+  padding-bottom: calc(0.7rem + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   text-align: center;
 }
 
@@ -213,7 +261,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   text-decoration: none;
 }
 
@@ -224,21 +272,17 @@
 /* The official mark uses dark lettering, so sit it on a light chip to stay
    legible on the dark footer without altering the brand colors. */
 .attributionLogo {
-  height: 1.75rem;
+  height: 1.55rem;
   width: auto;
   display: block;
-  padding: 0.3rem 0.55rem;
+  padding: 0.22rem 0.5rem;
   background: #fff;
   border-radius: 6px;
 }
 
 @media (max-width: 640px) {
   .header {
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    padding: calc(0.55rem + env(safe-area-inset-top, 0px)) 0.75rem 0.55rem;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    padding: calc(0.38rem + env(safe-area-inset-top, 0px)) 0.65rem 0.32rem;
   }
 
   .headerBar {
@@ -246,7 +290,7 @@
     grid-template-areas:
       'brand actions'
       'nav nav';
-    gap: 0.45rem 0.5rem;
+    gap: 0.28rem 0.4rem;
   }
 
   .brandSlot {
@@ -260,22 +304,28 @@
   }
 
   .title {
-    font-size: 0.9rem;
-    line-height: 1.3;
+    font-size: 0.84rem;
+    line-height: 1.25;
   }
 
   .brandBadge {
     justify-content: flex-start;
-    max-width: min(100%, 14rem);
-    padding: 0.32rem 0.65rem 0.32rem 0.38rem;
+    max-width: min(100%, 13.5rem);
+    padding: 0.2rem 0.55rem 0.2rem 0.22rem;
+    gap: 0.4rem;
+  }
+
+  .brandAvatar {
+    width: 1.7rem;
+    height: 1.7rem;
   }
 
   .brandTeam {
-    font-size: 0.82rem;
+    font-size: 0.76rem;
   }
 
   .brandTagline {
-    font-size: 0.65rem;
+    font-size: 0.58rem;
   }
 
   /* Horizontal scroll nav — one compact row, no wrapping. */
@@ -283,19 +333,19 @@
     grid-area: nav;
     flex-wrap: nowrap;
     justify-content: flex-start;
-    gap: 0.25rem;
+    gap: 0.2rem;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
-    margin: 0 -0.75rem;
-    padding: 0.15rem 0.75rem 0.35rem;
+    margin: 0 -0.65rem;
+    padding: 0.08rem 0.65rem 0.22rem;
     mask-image: linear-gradient(
       to right,
       transparent,
-      #000 0.75rem,
-      #000 calc(100% - 0.75rem),
+      #000 0.65rem,
+      #000 calc(100% - 0.65rem),
       transparent
     );
   }
@@ -307,42 +357,36 @@
   .navLink {
     flex: 0 0 auto;
     scroll-snap-align: start;
-    font-size: 0.78rem;
-    padding: 0.42rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid transparent;
-  }
-
-  .navLinkActive {
-    border-color: rgba(124, 58, 237, 0.45);
+    font-size: 0.72rem;
+    padding: 0.34rem 0.55rem;
   }
 
   .footer {
-    padding: 0.75rem 1rem;
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding: 0.5rem 0.75rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
 
   .attribution {
     flex-wrap: wrap;
     justify-content: center;
-    font-size: 0.78rem;
-    gap: 0.35rem;
+    font-size: 0.72rem;
+    gap: 0.3rem;
   }
 
   .attributionLogo {
-    height: 1.5rem;
-    padding: 0.25rem 0.45rem;
+    height: 1.3rem;
+    padding: 0.18rem 0.38rem;
   }
 
   .main {
-    padding: 1rem 0.75rem;
-    padding-left: calc(0.75rem + env(safe-area-inset-left, 0px));
-    padding-right: calc(0.75rem + env(safe-area-inset-right, 0px));
+    padding: 0.7rem 0.65rem 1rem;
+    padding-left: calc(0.65rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(0.65rem + env(safe-area-inset-right, 0px));
   }
 
   .mainWide {
-    padding: 0.85rem 0.5rem;
-    padding-left: calc(0.5rem + env(safe-area-inset-left, 0px));
-    padding-right: calc(0.5rem + env(safe-area-inset-right, 0px));
+    padding: 0.55rem 0.4rem 0.85rem;
+    padding-left: calc(0.4rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(0.4rem + env(safe-area-inset-right, 0px));
   }
 }

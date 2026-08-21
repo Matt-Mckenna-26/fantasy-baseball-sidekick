@@ -1,8 +1,12 @@
 .card {
-  background: var(--panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 42%), var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem 1.1rem 1.2rem;
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem 1.05rem;
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
 }
 
 .card + .card {
@@ -103,7 +107,7 @@
 
 .teamChipActive {
   border-color: var(--accent-hover);
-  background: rgba(109, 40, 217, 0.25);
+  background: var(--accent-soft);
   color: var(--text);
 }
 
@@ -139,10 +143,12 @@
 
 .compareTile {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 50%), var(--panel);
   padding: 0.7rem 0.75rem;
   min-width: 0;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .compareTileHead {
@@ -297,10 +303,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  background: rgba(30, 41, 59, 0.55);
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
+  border-radius: var(--radius-md);
+  background: rgba(7, 11, 22, 0.45);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
 }
 
 /* Inline chart loader: spinner + cycling verb, matching the global overlay. */
@@ -390,15 +396,19 @@
 
 /* Custom Recharts tooltip surface. */
 .tooltip {
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--glass-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   padding: 0.55rem 0.7rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
   font-size: 0.82rem;
   color: var(--text);
   max-height: min(30rem, 78vh);
   overflow-y: auto;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .tooltipTitle {
@@ -467,7 +477,7 @@
 
 /* The series the cursor is over: pulled forward so it's easy to read off. */
 .tooltipMetricsRowActive {
-  background: rgba(124, 58, 237, 0.28);
+  background: var(--accent-soft);
   border-radius: 6px;
   margin: 0 -0.35rem;
   padding-left: 0.35rem;
@@ -548,18 +558,19 @@
   align-items: center;
   gap: 0.42rem;
   padding: 0.38rem 0.72rem;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  background: rgba(148, 163, 184, 0.06);
+  background: var(--glass);
   color: var(--text);
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--highlight);
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease;
+    background var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out),
+    color var(--duration) var(--ease-out);
 }
 
 .downloadBtn:hover:not(:disabled) {
@@ -614,5 +625,20 @@
 
   .tooltipName {
     max-width: 8rem;
+  }
+
+  .compareTileStats:not(.compareTileStatsFill) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 0.65rem;
+  }
+
+  .compareStatRow {
+    padding: 0.38rem 0;
+    font-size: 0.82rem;
+  }
+
+  .compareTileFill {
+    padding: 0.75rem 0.7rem;
   }
 }

@@ -16,7 +16,12 @@ import type {
   StatRange,
   StatTable,
 } from '@fcm/contracts';
-import { getAdvancedLeagueStats, getPlayerGameLog, getPlayerNews, getPlayerStats } from '../api/client';
+import {
+  getAdvancedLeagueStats,
+  getPlayerGameLog,
+  getPlayerNews,
+  getPlayerStats,
+} from '../api/client';
 import { usePlayerFocus, type PlayerFocusTarget } from '../context/PlayerFocusContext';
 import { useSession } from '../context/SessionContext';
 import { chatAskPath, playerIsOnMyTeam, playerResearchPrompt } from '../lib/chatAsk';
@@ -476,8 +481,15 @@ function clampPos(x: number, y: number): { x: number; y: number } {
  */
 function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: number }) {
   const { session } = useSession();
-  const { pool, leagueId, supportsLast14, closePlayerFocus, closeAllPlayerFocus, getTrendWindows, setTrendWindows } =
-    usePlayerFocus();
+  const {
+    pool,
+    leagueId,
+    supportsLast14,
+    closePlayerFocus,
+    closeAllPlayerFocus,
+    getTrendWindows,
+    setTrendWindows,
+  } = usePlayerFocus();
 
   const playerId = target.playerId;
   const tab: 'batting' | 'pitching' =
@@ -770,31 +782,6 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
           <span className={styles.dragGrip} aria-hidden="true">
             ⠿
           </span>
-          {isCompact ? (
-            <div
-              className={styles.viewToggle}
-              role="group"
-              aria-label="Switch panel"
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                className={`${styles.viewToggleBtn}${compactView === 'card' ? ` ${styles.viewToggleBtnActive}` : ''}`}
-                aria-pressed={compactView === 'card'}
-                onClick={() => setCompactView('card')}
-              >
-                Ranks
-              </button>
-              <button
-                type="button"
-                className={`${styles.viewToggleBtn}${compactView === 'chart' ? ` ${styles.viewToggleBtnActive}` : ''}`}
-                aria-pressed={compactView === 'chart'}
-                onClick={() => setCompactView('chart')}
-              >
-                Trend
-              </button>
-            </div>
-          ) : null}
           <button
             type="button"
             className={styles.exportBtn}
@@ -860,74 +847,103 @@ function PlayerFocusCard({ target, index }: { target: PlayerFocusTarget; index: 
             />
           </div>
 
+          {isCompact ? (
+            <div className={styles.viewToggleBar} role="group" aria-label="Switch panel">
+              <button
+                type="button"
+                className={`${styles.viewToggleBtn}${compactView === 'card' ? ` ${styles.viewToggleBtnActive}` : ''}`}
+                aria-pressed={compactView === 'card'}
+                onClick={() => setCompactView('card')}
+              >
+                Ranks
+              </button>
+              <button
+                type="button"
+                className={`${styles.viewToggleBtn}${compactView === 'chart' ? ` ${styles.viewToggleBtnActive}` : ''}`}
+                aria-pressed={compactView === 'chart'}
+                onClick={() => setCompactView('chart')}
+              >
+                Trend
+              </button>
+            </div>
+          ) : null}
+
           {columns.length > 0 ? (
             <div className={styles.controls}>
-              <div className={chartStyles.controlGroup}>
-                <span className={chartStyles.controlGroupLabel}>Range (stats)</span>
-                <div className={chartStyles.teamToggles} role="group" aria-label="Stat card range">
-                  {rangeOptions.map((opt) => {
-                    const active = selectedRange === opt.range;
-                    return (
-                      <button
-                        key={opt.range}
-                        type="button"
-                        aria-pressed={active}
-                        title={opt.label}
-                        className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
-                        onClick={() => setSelectedRange(opt.range)}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className={chartStyles.controlGroup}>
-                <span className={chartStyles.controlGroupLabel}>Metrics</span>
-                <div
-                  className={chartStyles.teamToggles}
-                  role="group"
-                  aria-label="Show or hide trend metrics"
-                >
-                  <div className={chartStyles.teamToggleActions}>
-                    <button
-                      type="button"
-                      className={chartStyles.teamToggleAction}
-                      onClick={() => setHiddenMetrics(new Set())}
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      className={chartStyles.teamToggleAction}
-                      onClick={() => setHiddenMetrics(new Set(columns.map((c) => c.key)))}
-                    >
-                      None
-                    </button>
+              {(!isCompact || compactView === 'card') && (
+                <div className={chartStyles.controlGroup}>
+                  <span className={chartStyles.controlGroupLabel}>Range (stats)</span>
+                  <div
+                    className={chartStyles.teamToggles}
+                    role="group"
+                    aria-label="Stat card range"
+                  >
+                    {rangeOptions.map((opt) => {
+                      const active = selectedRange === opt.range;
+                      return (
+                        <button
+                          key={opt.range}
+                          type="button"
+                          aria-pressed={active}
+                          title={opt.label}
+                          className={`${chartStyles.teamChip}${active ? ` ${chartStyles.teamChipActive}` : ''}`}
+                          onClick={() => setSelectedRange(opt.range)}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {columns.map((col) => {
-                    const hidden = hiddenMetrics.has(col.key);
-                    return (
-                      <button
-                        key={col.key}
-                        type="button"
-                        aria-pressed={!hidden}
-                        title={`${col.description ?? col.label} \u2014 click to toggle, double-click to isolate`}
-                        className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
-                        onClick={() => toggleMetric(col.key)}
-                        onDoubleClick={() => isolateMetric(col.key)}
-                      >
-                        <span
-                          className={chartStyles.teamSwatch}
-                          style={{ background: colorMap.get(col.key) }}
-                        />
-                        {col.label}
-                      </button>
-                    );
-                  })}
                 </div>
-              </div>
+              )}
+
+              {(!isCompact || compactView === 'chart') && (
+                <div className={chartStyles.controlGroup}>
+                  <span className={chartStyles.controlGroupLabel}>Metrics</span>
+                  <div
+                    className={chartStyles.teamToggles}
+                    role="group"
+                    aria-label="Show or hide trend metrics"
+                  >
+                    <div className={chartStyles.teamToggleActions}>
+                      <button
+                        type="button"
+                        className={chartStyles.teamToggleAction}
+                        onClick={() => setHiddenMetrics(new Set())}
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        className={chartStyles.teamToggleAction}
+                        onClick={() => setHiddenMetrics(new Set(columns.map((c) => c.key)))}
+                      >
+                        None
+                      </button>
+                    </div>
+                    {columns.map((col) => {
+                      const hidden = hiddenMetrics.has(col.key);
+                      return (
+                        <button
+                          key={col.key}
+                          type="button"
+                          aria-pressed={!hidden}
+                          title={`${col.description ?? col.label} \u2014 click to toggle, double-click to isolate`}
+                          className={`${chartStyles.teamChip}${hidden ? ` ${chartStyles.teamChipHidden}` : ''}`}
+                          onClick={() => toggleMetric(col.key)}
+                          onDoubleClick={() => isolateMetric(col.key)}
+                        >
+                          <span
+                            className={chartStyles.teamSwatch}
+                            style={{ background: colorMap.get(col.key) }}
+                          />
+                          {col.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
 

@@ -1,41 +1,63 @@
 /* Global design tokens, reset, and shared primitives only.
-   Component-specific styles live in co-located *.module.css files. */
+   Component-specific styles live in co-located *.module.css files.
+
+   Visual language: night-diamond glass — stadium floodlights over a dark infield,
+   frosted chrome, dense scoreboard type. Chat keeps its own star-field stage. */
 :root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #6d28d9;
-  --accent-hover: #7c3aed;
-  --border: #334155;
+  --bg: #070b16;
+  --bg-mid: #0c1220;
+  --panel: #141c2e;
+  --panel-raised: #1a2438;
+  --glass: rgba(16, 24, 42, 0.62);
+  --glass-strong: rgba(12, 18, 34, 0.82);
+  --text: #f2f5fb;
+  --muted: #9aa8bd;
+  --accent: #6d4dff;
+  --accent-hover: #8b74ff;
+  --accent-soft: rgba(109, 77, 255, 0.22);
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --highlight: rgba(255, 255, 255, 0.14);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --live: #ff4b6a;
+  --hot: #ff6b4a;
+  --cold: #5b9dff;
+  --grass: #3dd68c;
+  --leather: #e8c47a;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration: 180ms;
+  --glass-blur: blur(22px) saturate(1.55);
+  --focus-ring: 2px solid var(--accent-hover);
 
   /* Thin overlay scrollbars — frosted pill on dark surfaces */
   --scrollbar-size: 6px;
-  --scrollbar-thumb: rgba(226, 232, 240, 0.22);
-  --scrollbar-thumb-hover: rgba(226, 232, 240, 0.4);
-  --scrollbar-thumb-active: rgba(226, 232, 240, 0.55);
+  --scrollbar-thumb: rgba(242, 245, 251, 0.22);
+  --scrollbar-thumb-hover: rgba(242, 245, 251, 0.4);
+  --scrollbar-thumb-active: rgba(242, 245, 251, 0.55);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  -webkit-overflow-scrolling: touch;
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   overflow-x: clip;
-  font-family:
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
-}
-
-/* Global scrollbars — sleek, thin, overlay-style (Apple-like glass pill). */
-html {
-  -webkit-overflow-scrolling: touch;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -86,25 +108,39 @@ html {
   background: var(--accent);
   color: white;
   border: none;
-  padding: 0.6rem 1rem;
-  border-radius: 8px;
-  font-size: 1rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.95rem;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 8px 20px rgba(109, 77, 255, 0.28);
+  transition:
+    background var(--duration) var(--ease-out),
+    transform var(--duration) var(--ease-out);
 }
 
 .button:hover {
   background: var(--accent-hover);
 }
 
+.button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .button--secondary {
-  background: transparent;
+  background: var(--glass);
   border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .muted {
@@ -112,14 +148,35 @@ html {
 }
 
 h1 {
-  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
-  line-height: 1.2;
-  margin: 0 0 0.35rem;
+  font-size: clamp(1.2rem, 3.8vw, 1.7rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.3rem;
 }
 
 h2 {
-  font-size: clamp(1.05rem, 3.5vw, 1.35rem);
+  font-size: clamp(1rem, 3.2vw, 1.28rem);
   line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.emptyState {
+  margin: 1.5rem auto;
+  max-width: 28rem;
+  padding: 1.15rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 46%), var(--glass);
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.emptyState h1 {
+  margin-bottom: 0.45rem;
 }
 
 @media (max-width: 640px) {
@@ -127,7 +184,17 @@ h2 {
     display: flex;
     width: 100%;
     justify-content: center;
-    padding: 0.7rem 1rem;
-    font-size: 0.95rem;
+    padding: 0.65rem 1rem;
+    font-size: 0.92rem;
+  }
+
+  h1 {
+    font-size: 1.15rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
   }
 }

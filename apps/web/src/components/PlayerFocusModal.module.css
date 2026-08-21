@@ -14,12 +14,16 @@
   height: min(90vh, 42rem);
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--glass-strong);
+  box-shadow:
+    inset 0 1px 0 var(--highlight),
+    0 28px 80px rgba(0, 0, 0, 0.55);
   color: var(--text);
   overflow: hidden;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 /* Slim drag handle bar: grip + close only (no avatar/name - the card owns those). */
@@ -46,6 +50,29 @@
   opacity: 0.6;
 }
 
+/* Full-width Ranks / Trend switch, shown in the card body on phones. */
+.viewToggleBar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  padding: 0.28rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 var(--highlight);
+}
+
+.viewToggleBar .viewToggleBtn {
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+  border-radius: 12px;
+}
+
+.viewToggleBar .viewToggleBtn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Compact-mode badge: segmented pill to swap the single visible panel. */
 .viewToggle {
   display: inline-flex;
@@ -54,7 +81,8 @@
   margin-right: 0.5rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: rgba(148, 163, 184, 0.1);
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .viewToggleBtn {
@@ -74,8 +102,9 @@
 }
 
 .viewToggleBtnActive {
-  background: var(--accent, #38bdf8);
-  color: #0b1120;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 /* Export the whole card (stat card + trend, minus News) to PNG. */
@@ -97,7 +126,7 @@
 
 .exportBtn:hover:not(:disabled) {
   color: var(--text);
-  border-color: var(--accent, #38bdf8);
+  border-color: var(--accent-hover);
 }
 
 .exportBtn:disabled {
@@ -124,7 +153,12 @@
 
 .close:hover {
   color: var(--text);
-  background: rgba(148, 163, 184, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.close:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .body {
@@ -231,8 +265,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid rgba(167, 139, 250, 0.4);
-  background: rgba(109, 40, 217, 0.16);
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  background: var(--accent-soft);
   color: var(--text);
   font-size: 0.72rem;
   font-weight: 700;
@@ -241,6 +275,7 @@
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .askBtn:hover {
@@ -415,7 +450,7 @@
 }
 
 .newsItem:hover {
-  border-color: var(--accent, #38bdf8);
+  border-color: var(--accent-hover);
 }
 
 .newsLink {
@@ -491,10 +526,10 @@
 .snapPreview {
   position: fixed;
   pointer-events: none;
-  border: 2px solid var(--accent, #38bdf8);
-  background: rgba(56, 189, 248, 0.14);
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 9999px rgba(56, 189, 248, 0.06);
+  border: 2px solid var(--accent-hover);
+  background: rgba(109, 77, 255, 0.14);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 9999px rgba(109, 77, 255, 0.06);
   transition:
     left 0.09s ease,
     top 0.09s ease,
@@ -524,22 +559,38 @@
    disabled in JS), so it can never be positioned off-screen by desktop coordinates. */
 @media (max-width: 46rem) {
   .card {
-    left: 0.5rem;
-    right: 0.5rem;
-    top: max(0.5rem, env(safe-area-inset-top));
+    left: 0.4rem;
+    right: 0.4rem;
+    top: max(0.4rem, env(safe-area-inset-top));
     bottom: auto;
     width: auto;
     max-width: none;
-    height: min(calc(100dvh - 1rem), 52rem);
+    height: min(calc(100dvh - 0.8rem), 52rem);
     cursor: default;
   }
 
   .topBar {
     cursor: default;
+    padding: 0.32rem 0.5rem 0.32rem 0.6rem;
   }
 
   .body {
     overflow-y: auto;
+    padding: 0.75rem 0.85rem 1rem;
+    gap: 0.7rem;
+  }
+
+  .playerHeader {
+    gap: 0.6rem;
+  }
+
+  .headerAvatar {
+    width: 3.1rem;
+    height: 3.1rem;
+  }
+
+  .headerName {
+    font-size: 1.15rem;
   }
 
   .panels {
@@ -547,12 +598,23 @@
   }
 
   .controls {
-    gap: 0.85rem 1rem;
-    padding: 0.55rem 0;
+    gap: 0.55rem 0.75rem;
+    padding: 0.35rem 0;
+  }
+
+  .rightCol {
+    min-height: min(22rem, 48dvh);
   }
 
   .chartArea {
-    min-height: 14rem;
-    max-height: 18rem;
+    min-height: min(20rem, 44dvh);
+    max-height: none;
+    flex: 1;
+  }
+
+  .logTable th,
+  .logTable td {
+    padding: 0.4rem 0.45rem;
+    font-size: 0.78rem;
   }
 }

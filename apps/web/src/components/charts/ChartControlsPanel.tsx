@@ -1,4 +1,11 @@
-import { useEffect, useId, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import styles from './ChartControlsPanel.module.css';
 
 function SlidersIcon() {
@@ -31,11 +38,11 @@ function CloseIcon() {
 
 /**
  * Floating, icon-gated container for the Analyze League chart controls. A small round
- * icon sticks to the top-right (like the back-to-top shortcut) and is only shown while
- * the charts are in view (`anchorRef`). Clicking it opens a panel anchored beneath it
- * for changing the metric, range, and teams; it collapses back to the icon via the
- * icon, the close button, or Escape. Deliberately has no dimming backdrop so the charts
- * (and their loading state) stay visible while tweaking controls.
+ * icon follows the user (pinned below the sticky header on desktop, above back-to-top
+ * on phones) and is shown while the charts are in view (`anchorRef`), or immediately
+ * when `alwaysVisible`. Clicking it opens a panel for metric/range/team tweaks; it
+ * collapses via the icon, close, or Escape. No dimming backdrop so the charts stay
+ * visible while adjusting.
  */
 /** Default key marking that the user has opened the chart controls (hides the badge). */
 const DEFAULT_SEEN_KEY = 'analyze-chart-controls-seen';
@@ -58,9 +65,8 @@ export function ChartControlsPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [inView, setInView] = useState(false);
-  // The floating icon is pinned top-right, where it can cover the header's user info.
-  // Only reveal it once the header has scrolled clear of the icon's pinned zone.
-  const [headerClear, setHeaderClear] = useState(false);
+  // Offset the floating icon below the sticky header so it never covers league/user chrome.
+  const [headerH, setHeaderH] = useState(0);
   const [seen, setSeen] = useState(() => {
     try {
       return localStorage.getItem(seenKey) === '1';
@@ -93,28 +99,28 @@ export function ChartControlsPanel({
     setOpen(true);
   };
 
-  // Reveal the trigger only while the charts region intersects the viewport.
+  // Reveal the floating trigger as soon as the charts region peeks into view.
   useEffect(() => {
     const el = anchorRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => setInView(entries.some((e) => e.isIntersecting)),
-      { rootMargin: '0px 0px -20% 0px' },
+      { rootMargin: '48px 0px -6% 0px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
   }, [anchorRef]);
 
-  // Hide the floating icon while the header still overlaps its top-right pinned zone
-  // (~1.25rem from the top), so it never blocks the user info when scrolled to the top.
   useEffect(() => {
     const header = document.querySelector('header');
-    const update = () => setHeaderClear(!header || header.getBoundingClientRect().bottom <= 12);
+    if (!header) return;
+    const update = () => setHeaderH(Math.ceil(header.getBoundingClientRect().height));
     update();
-    window.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(header);
     window.addEventListener('resize', update);
     return () => {
-      window.removeEventListener('scroll', update);
+      ro.disconnect();
       window.removeEventListener('resize', update);
     };
   }, []);
@@ -133,6 +139,11 @@ export function ChartControlsPanel({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
+
+  const showFab = alwaysVisible || inView || open;
+  const offsetStyle = {
+    '--chart-controls-header-h': `${headerH}px`,
+  } as CSSProperties;
 
   return (
     <>
@@ -153,10 +164,11 @@ export function ChartControlsPanel({
         </div>
       )}
 
-      {headerClear && (alwaysVisible || inView || open) && (
+      {showFab && (
         <button
           type="button"
           className={styles.fab}
+          style={offsetStyle}
           aria-expanded={open}
           aria-controls={panelId}
           aria-label={seen ? 'Chart controls' : 'Chart controls (new)'}
@@ -170,6 +182,7 @@ export function ChartControlsPanel({
       <div
         id={panelId}
         className={`${styles.panel}${open ? ` ${styles.panelOpen}` : ''}`}
+        style={offsetStyle}
         role="dialog"
         aria-label="Chart controls"
         inert={!open}

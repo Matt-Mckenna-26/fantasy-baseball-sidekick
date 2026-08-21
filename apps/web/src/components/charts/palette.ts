@@ -22,13 +22,13 @@ export const CHART_COLORS = [
   '#facc15',
 ] as const;
 
-/** Literal colors matching the styles.css tokens, for Recharts SVG props. */
+/** Literal colors matching the styles.css night-diamond tokens, for Recharts SVG props. */
 export const CHART_THEME = {
-  text: '#e2e8f0',
-  muted: '#94a3b8',
-  border: '#334155',
-  panel: '#1e293b',
-  accent: '#7c3aed',
+  text: '#f2f5fb',
+  muted: '#9aa8bd',
+  border: 'rgba(255, 255, 255, 0.14)',
+  panel: '#141c2e',
+  accent: '#8b74ff',
 } as const;
 
 /** Map each team id to a stable color by its order in the list (consistent across charts). */

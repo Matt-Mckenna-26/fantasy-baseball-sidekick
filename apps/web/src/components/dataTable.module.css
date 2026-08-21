@@ -3,8 +3,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 
 .field {
@@ -19,12 +19,20 @@
 }
 
 .select {
-  background: var(--panel);
+  background: var(--glass);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.95rem;
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.55rem;
+  font-size: 0.9rem;
+  box-shadow: inset 0 1px 0 var(--highlight);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.select:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .tabs {
@@ -84,24 +92,34 @@
 }
 
 .tab {
-  background: var(--panel);
+  background: var(--glass);
   color: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.9rem;
+  border-radius: var(--radius-pill);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--highlight);
+  transition:
+    color var(--duration) var(--ease-out),
+    background var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out);
 }
 
 .tab:hover {
   color: var(--text);
 }
 
+.tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .tabActive {
   color: var(--text);
-  border-color: var(--accent-hover);
-  background: rgba(109, 40, 217, 0.25);
+  border-color: rgba(139, 116, 255, 0.45);
+  background: var(--accent-soft);
 }
 
 .tableStack {
@@ -112,13 +130,14 @@
 
 /* Floating card surface for data tables — shared across Rosters and Stats. */
 .tableCard {
-  background: var(--panel);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 42%), var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem 1.25rem 0.75rem;
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1.1rem 0.7rem;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.18),
-    0 8px 24px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 var(--highlight),
+    var(--shadow-sm);
   container-type: inline-size;
   container-name: roster-card;
 }
@@ -177,15 +196,15 @@
   left: 0;
   z-index: 1;
   background: var(--panel);
-  min-width: 3rem;
+  min-width: 2.75rem;
 }
 
 .stickyColSecond {
   position: sticky;
-  left: 3rem;
+  left: 2.75rem;
   z-index: 1;
   background: var(--panel);
-  min-width: 8rem;
+  min-width: 7.5rem;
 }
 
 thead .stickyCol,
@@ -244,9 +263,9 @@ thead .stickyColSecond {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  margin: 1.5rem 0 1rem;
+  margin: 0.85rem 0 0.7rem;
 }
 
 .rosterToolbar .managerHeading {
@@ -275,23 +294,25 @@ thead .stickyColSecond {
 }
 
 .dateInput {
-  background: var(--panel);
+  background: var(--glass);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  padding: 0.32rem 0.55rem;
   font: inherit;
   color-scheme: dark;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .dateNav,
 .todayButton {
-  background: var(--panel);
+  background: var(--glass);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font: inherit;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 .dateNav {
@@ -307,7 +328,14 @@ thead .stickyColSecond {
 
 .dateNav:hover:not(:disabled),
 .todayButton:hover:not(:disabled) {
-  border-color: var(--accent-hover, #a78bfa);
+  border-color: var(--accent-hover);
+}
+
+.dateNav:focus-visible,
+.todayButton:focus-visible,
+.dateInput:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .dateNav:disabled,
@@ -320,8 +348,8 @@ thead .stickyColSecond {
 .managerHeading {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  margin: 1.5rem 0;
+  gap: 0.55rem;
+  margin: 0.85rem 0;
 }
 
 .managerHeadingText {
@@ -415,10 +443,10 @@ thead .stickyColSecond {
   height: 100%;
   padding: 0 0.15rem;
   border-radius: 999px;
-  background: #16a34a;
-  color: #fff;
+  background: var(--grass);
+  color: #062014;
   font-size: clamp(0.58rem, 1.6vw, 0.72rem);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
 }
 
@@ -464,10 +492,11 @@ thead .stickyColSecond {
 
 @media (max-width: 640px) {
   .tableCard {
-    padding: 0.65rem 0.4rem 0.5rem;
+    padding: 0.5rem 0.4rem 0.4rem;
+    border-radius: var(--radius-md);
   }
 
-  /* Phones: H-scroll with sticky Pos/Player instead of squeeze-to-fit microtext. */
+  /* Phones: H-scroll with sticky Player instead of squeeze-to-fit microtext. */
   .tableRosterWrap {
     overflow-x: auto;
     margin: 0 -0.25rem;
@@ -479,25 +508,25 @@ thead .stickyColSecond {
     table-layout: auto;
     width: max-content;
     min-width: 100%;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
   }
 
   .tableRoster th,
   .tableRoster td {
-    padding: 0.4rem 0.5rem;
+    padding: 0.36rem 0.42rem;
   }
 
   .tableRoster thead th {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
   }
 
   .tableRoster .posBadge {
-    font-size: 0.72rem;
-    padding: 0.15rem 0.35rem;
+    font-size: 0.68rem;
+    padding: 0.12rem 0.3rem;
   }
 
   .tableRoster .statusBadge {
-    font-size: 0.68rem;
+    font-size: 0.6rem;
   }
 
   .stickyPos,
@@ -509,12 +538,12 @@ thead .stickyColSecond {
 
   .stickyPos {
     left: 0;
-    min-width: 2.75rem;
+    min-width: 2.15rem;
   }
 
   .stickyPlayer {
-    left: 2.75rem;
-    min-width: 8.5rem;
+    left: 2.15rem;
+    min-width: 8.25rem;
     max-width: 10.5rem;
   }
 
@@ -525,8 +554,8 @@ thead .stickyColSecond {
     left: 0;
     z-index: 2;
     background: var(--panel);
-    min-width: 9.5rem;
-    max-width: 13rem;
+    min-width: 8.75rem;
+    max-width: 12rem;
   }
 
   thead .stickyPos,
@@ -543,157 +572,172 @@ thead .stickyColSecond {
   /* Compact the badges when they live in the footer rather than their own column. */
   .metaFooter .posBadge {
     min-width: 0;
-    padding: 0.05rem 0.3rem;
-    font-size: 0.66rem;
+    padding: 0.04rem 0.22rem;
+    font-size: 0.6rem;
   }
 
   .metaFooter .statusBadge {
-    padding: 0.02rem 0.3rem;
-    font-size: 0.64rem;
+    padding: 0.02rem 0.22rem;
+    font-size: 0.58rem;
   }
 
   .page__header {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 0.45rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .page__header::-webkit-scrollbar {
+    display: none;
   }
 
   .tabs {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .tab {
-    flex: 1 1 calc(50% - 0.25rem);
+    flex: 0 0 auto;
     text-align: center;
   }
 
   .tabToolbar,
   .rosterToolbar {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 0.4rem;
+  }
+
+  .tabToolbar::-webkit-scrollbar,
+  .rosterToolbar::-webkit-scrollbar {
+    display: none;
   }
 
   .rosterToolbar .rangeToggle,
   .rosterToolbar .rosterFilters {
     margin-left: 0;
+    flex: 0 0 auto;
   }
 
   .rosterToolbar .rosterFilters {
-    width: 100%;
-    justify-content: stretch;
+    width: auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
   }
 
   .rosterToolbar .dateBar {
-    width: 100%;
+    width: auto;
+    flex-wrap: nowrap;
   }
 
   .rosterToolbar .dateInput {
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 8.5rem;
   }
 
   .tabToolbar .tabs {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
   }
 
   .tabToolbar .rangeToggle {
-    display: flex;
-    flex-wrap: wrap;
-    width: 100%;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    width: auto;
   }
 
   .tabToolbar .coverageControls {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
+    width: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
   }
 
   .weekField {
-    width: 100%;
+    width: auto;
   }
 
   .weekField .select {
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 6.5rem;
   }
 
   .rangeToggle {
-    display: flex;
-    flex-wrap: wrap;
-    width: 100%;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    width: auto;
   }
 
   .rangeButton,
   .rangeButtonActive {
-    flex: 1 1 auto;
-    padding: 0.35rem 0.45rem;
-    font-size: clamp(0.72rem, 3vw, 0.85rem);
+    flex: 0 0 auto;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.72rem;
   }
 
   .tableCardTitle {
-    font-size: 0.88rem;
+    font-size: 0.82rem;
   }
 
   .coverageHint {
-    font-size: 0.72rem;
-    margin-bottom: 0.85rem;
+    font-size: 0.68rem;
+    margin-bottom: 0.55rem;
   }
 
-  /* Tab row + help icon: keep controls on one line when possible. */
   .tabToolbar {
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .tabToolbar .tabs {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
   }
 
-  /* Plain data tables (Standings, Transactions) get no desktop->mobile squeeze on
-     their own, so at phone widths the 6 standings columns overflowed and forced a
-     wide horizontal scroll (the "bleed"). Shrink type/padding and slim the sticky
-     identity columns so the whole table fits one iPhone viewport. */
+  /* Transactions can H-scroll; standings uses its own column widths. */
   .table {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
   }
 
   .table th,
   .table td {
-    padding: 0.4rem 0.4rem;
+    padding: 0.32rem 0.28rem;
   }
 
   .table thead th {
-    font-size: 0.66rem;
+    font-size: 0.6rem;
     letter-spacing: 0.02em;
   }
 
-  /* Slimmer rank + team sticky columns leave room for the stat columns. The team
-     name column absorbs the table's slack (so no dead space) and ellipsizes when a
-     long name would otherwise push the table wide. */
   .stickyCol {
-    min-width: 2.5rem;
+    min-width: 2.15rem;
   }
 
   .stickyColSecond {
-    left: 2.5rem;
-    min-width: 5.5rem;
+    left: 2.15rem;
+    min-width: 8rem;
   }
 
   .table .posBadge {
-    min-width: 1.7rem;
-    padding: 0.1rem 0.28rem;
-    font-size: 0.72rem;
+    min-width: 1.55rem;
+    padding: 0.08rem 0.22rem;
+    font-size: 0.66rem;
   }
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 
 .table th,
 .table td {
   text-align: left;
-  padding: 0.55rem 0.75rem;
+  padding: 0.48rem 0.65rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -701,13 +745,13 @@ thead .stickyColSecond {
 .table thead th {
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .table tbody tr:hover {
-  background: rgba(148, 163, 184, 0.08);
+  background: rgba(139, 116, 255, 0.08);
 }
 
 /* Bench rows: muted grey so inactive roster slots read at a glance. */
@@ -775,33 +819,38 @@ thead .stickyColSecond {
 
 .posBadge {
   display: inline-block;
-  min-width: 2.2rem;
+  min-width: 2.1rem;
   text-align: center;
-  padding: 0.15rem 0.4rem;
+  padding: 0.12rem 0.35rem;
   border-radius: 6px;
-  background: rgba(109, 40, 217, 0.25);
-  font-size: 0.8rem;
-  font-weight: 600;
+  background: var(--accent-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .statusBadge {
   display: inline-block;
-  padding: 0.1rem 0.45rem;
+  padding: 0.08rem 0.42rem;
   border-radius: 999px;
-  border: 1px solid #b45309;
-  color: #fbbf24;
-  font-size: 0.75rem;
+  border: 1px solid rgba(232, 196, 122, 0.45);
+  color: var(--leather);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 /* Segmented control for the stat window (Today / Last 7 / Last 30 / Season). */
 .rangeToggle {
   display: inline-flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  margin-bottom: 1rem;
-  background: var(--panel);
+  gap: 0.15rem;
+  padding: 0.18rem;
+  margin-bottom: 0.75rem;
+  background: var(--glass);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 0 var(--highlight);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 .rangeButton,
@@ -809,9 +858,10 @@ thead .stickyColSecond {
   border: none;
   background: transparent;
   color: var(--muted);
-  padding: 0.35rem 0.8rem;
-  border-radius: 7px;
-  font-size: 0.9rem;
+  padding: 0.32rem 0.72rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -819,10 +869,17 @@ thead .stickyColSecond {
   color: var(--text);
 }
 
+.rangeButton:focus-visible,
+.rangeButtonActive:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .rangeButtonActive {
-  background: var(--accent, #6d28d9);
+  background: var(--accent);
   color: #fff;
   font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--highlight);
 }
 
 /* Live game ticker cell: accent while a game is in progress, muted otherwise. */
@@ -835,8 +892,8 @@ thead .stickyColSecond {
 }
 
 .tickerLive {
-  color: var(--accent-hover, #a78bfa);
-  font-weight: 600;
+  color: var(--grass);
+  font-weight: 700;
   font-size: 0.85rem;
   white-space: nowrap;
 }

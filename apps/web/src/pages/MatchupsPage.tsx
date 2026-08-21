@@ -13,8 +13,13 @@ import type {
 } from '@fcm/contracts';
 import { inferPlayerPositionType, normalizeTeamAbbr } from '@fcm/contracts';
 import { AgGridReact, type CustomCellRendererProps } from 'ag-grid-react';
-import { themeQuartz, type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
-import { getLeagueMatchups, getLeagueTeamStats, getMlbGames, getTeamWeekStats } from '../api/client';
+import { type ColDef, type GetRowIdParams, type GridApi } from 'ag-grid-community';
+import {
+  getLeagueMatchups,
+  getLeagueTeamStats,
+  getMlbGames,
+  getTeamWeekStats,
+} from '../api/client';
 import { useFirstLeagueResource } from '../hooks/useFirstLeagueResource';
 import { useIsNarrow } from '../hooks/useIsNarrow';
 import { LeagueResourceNotice } from '../components/LeagueResourceNotice';
@@ -26,6 +31,7 @@ import { MatchupCarousel } from '../components/MatchupCarousel';
 import { PercentileHeatCell, type StatCellContext } from '../components/PercentileHeatCell';
 import { StatsGridHelp } from '../components/StatsGridHelp';
 import { GRID_FILTER_PARAMS } from '../lib/gridFilterParams';
+import { gridTheme, gridThemeNarrow, NARROW_IDENTITY_COL, NARROW_STAT_COL } from '../lib/gridTheme';
 import { buildStatPercentiles } from '../lib/percentile';
 import { formatMlbGameLine } from '../lib/mlbGameLine';
 import { toNumericValue } from '../lib/teamTrend';
@@ -48,20 +54,6 @@ function loadMatchupsData(leagueId: string): Promise<MatchupsData> {
     return { matchups, teamStats };
   });
 }
-
-/** Dark ag-grid theme tuned to the app's design tokens (shared look with Stats pages). */
-const gridTheme = themeQuartz.withParams({
-  backgroundColor: '#1e293b',
-  foregroundColor: '#e2e8f0',
-  headerTextColor: '#94a3b8',
-  headerBackgroundColor: '#1e293b',
-  borderColor: '#334155',
-  chromeBackgroundColor: '#1e293b',
-  oddRowBackgroundColor: 'rgba(148, 163, 184, 0.04)',
-  rowHoverColor: 'rgba(148, 163, 184, 0.08)',
-  accentColor: '#7c3aed',
-  fontFamily: 'inherit',
-});
 
 /** How often to refresh today's MLB games for the per-player game subtitle. */
 const MLB_POLL_MS = 30_000;
@@ -533,8 +525,7 @@ function PlayerStatsGrid({
     const playerCol: ColDef<PlayerRow> = {
       headerName: 'Player',
       field: 'fullName',
-      minWidth: isNarrow ? 150 : 180,
-      flex: 2,
+      ...(isNarrow ? NARROW_IDENTITY_COL : { minWidth: 180, flex: 2 }),
       ...(isNarrow ? { pinned: 'left' as const } : {}),
       cellRenderer: PlayerCell,
       tooltipField: 'fullName',
@@ -547,7 +538,7 @@ function PlayerStatsGrid({
       headerName: col.label,
       field: col.key,
       type: 'numericColumn',
-      width: 92,
+      ...(isNarrow ? NARROW_STAT_COL : { width: 92 }),
       ...(col.description ? { headerTooltip: col.description } : {}),
       cellRenderer: PercentileHeatCell,
       cellStyle: { padding: 0 },
@@ -597,7 +588,7 @@ function PlayerStatsGrid({
       </div>
       <div className={`${gridStyles.gridWrap} ${pageStyles.playersSection}`}>
         <AgGridReact<PlayerRow>
-          theme={gridTheme}
+          theme={isNarrow ? gridThemeNarrow : gridTheme}
           rowData={rows}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
